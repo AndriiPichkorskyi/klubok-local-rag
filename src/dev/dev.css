@@ -1,0 +1,203 @@
+/*
+ * Стилі панелі розробника. Використовуємо ЛИШЕ змінні з ../ui.css,
+ * жодних UI-бібліотек і жодного CSS-фреймворку.
+ * Внизу вікна каркас тримає фіксований футер ~28px — під нього лишаємо відступ.
+ */
+
+/* Каркас: шапка + дві колонки, кожна прокручується окремо. */
+.dp-root {
+  display: flex;
+  flex-direction: column;
+  /* Місце під фіксований футер каркаса (App.jsx): його висота — відступи 4px+4px,
+     кнопка ~32px і рамка. Резервуємо 44px, щоб журнал ніколи не ховався за ним. */
+  height: calc(100vh - 44px);
+  overflow: hidden;
+}
+
+.dp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.dp-title { font-weight: 600; }
+
+.dp-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: 12px;
+  padding: 12px;
+  min-height: 0; /* щоб внутрішні колонки могли скорочуватись і прокручуватись */
+  flex: 1 1 auto;
+}
+
+@media (max-width: 900px) {
+  .dp-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+.dp-col {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Секція — проста картка з рамкою. */
+.dp-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.dp-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.dp-section-title { font-weight: 600; }
+.dp-section-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Сітка кнопок кроків пайплайна / цілей очистки. */
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.dp-op { display: flex; flex-direction: column; gap: 4px; }
+
+.dp-op button { width: 100%; text-align: left; }
+.dp-op button.dp-danger:hover:not(:disabled) { border-color: var(--err); color: var(--err); }
+
+/* Індикатор прогресу однієї операції. */
+.dp-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.dp-bar-fill { height: 100%; background: var(--accent); transition: width .2s linear; }
+
+/* Невідомий відсоток — «біжуча» смужка. */
+.dp-bar-fill.dp-indeterminate {
+  width: 35%;
+  animation: dp-slide 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes dp-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+.dp-op-msg {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dp-ok { color: var(--ok); }
+.dp-err { color: var(--err); }
+.dp-warn { color: var(--warn); }
+.dp-small { font-size: 12px; }
+
+/* Повідомлення про помилку методу — видиме текстом, а не лише в консолі. */
+.dp-alert {
+  border: 1px solid var(--err);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.dp-alert.dp-alert-info { border-color: var(--warn); }
+
+/* Спільний журнал прогресу. */
+.dp-log { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.dp-log-body {
+  flex: 1 1 auto;
+  min-height: 160px;
+  overflow-y: auto;
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.dp-log-line { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-word; }
+.dp-log-time { color: var(--muted); flex: 0 0 auto; }
+.dp-log-src { color: var(--accent); flex: 0 0 auto; }
+
+/* Таблиці (статистика, звіти, список файлів). */
+.dp-scroll-x { overflow-x: auto; }
+
+table.dp-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.dp-table th, table.dp-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+table.dp-table th { color: var(--muted); font-weight: 600; }
+table.dp-table tr.dp-selected td { background: var(--panel); }
+table.dp-table td.dp-num { text-align: right; font-family: var(--mono); }
+
+.dp-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; }
+.dp-kv dt { color: var(--muted); }
+.dp-kv dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+
+.dp-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Власне підтвердження деструктивної дії. Ніяких confirm()/alert(). */
+.dp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 16px;
+}
+
+.dp-dialog {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  max-width: 440px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dp-dialog-title { font-weight: 600; color: var(--err); }
+.dp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dp-dialog-actions .dp-danger { border-color: var(--err); color: var(--err); }

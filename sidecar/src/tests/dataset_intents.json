@@ -1,0 +1,950 @@
+[
+  {
+    "id": "intent-en-screen-capture-001",
+    "language": "en",
+    "query": "Grab the current screen as an image",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-en-screen-capture-002",
+    "language": "en",
+    "query": "Save a screenshot of this window",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-en-screen-capture-003",
+    "language": "en",
+    "query": "I need a picture of my desktop",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-en-screen-capture-004",
+    "language": "en",
+    "query": "Capture only part of the screen",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-en-screen-capture-005",
+    "language": "en",
+    "query": "Take a quick snap of what's on screen",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-uk-screen-capture-001",
+    "language": "uk",
+    "query": "Збережи екран як картинку",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-uk-screen-capture-002",
+    "language": "uk",
+    "query": "Потрібен скрін поточного вікна",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-uk-screen-capture-003",
+    "language": "uk",
+    "query": "Хочу сфотографувати частину екрана",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-uk-screen-capture-004",
+    "language": "uk",
+    "query": "Зроби швидкий скриншот робочого стола",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-uk-screen-capture-005",
+    "language": "uk",
+    "query": "Як захопити виділену область екрана?",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-en-screen-record-001",
+    "language": "en",
+    "query": "Start recording what happens on my screen",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-en-screen-record-002",
+    "language": "en",
+    "query": "Make a video of this app window",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-en-screen-record-003",
+    "language": "en",
+    "query": "Capture my desktop as a recording",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-en-screen-record-004",
+    "language": "en",
+    "query": "I need to film a walkthrough on screen",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-en-screen-record-005",
+    "language": "en",
+    "query": "Record a selected area of the display",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-uk-screen-record-001",
+    "language": "uk",
+    "query": "Почати запис того, що відбувається на екрані",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-uk-screen-record-002",
+    "language": "uk",
+    "query": "Потрібно записати відео з робочого стола",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-uk-screen-record-003",
+    "language": "uk",
+    "query": "Хочу зняти інструкцію з екрана",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-uk-screen-record-004",
+    "language": "uk",
+    "query": "Запиши лише вибрану область дисплея",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-uk-screen-record-005",
+    "language": "uk",
+    "query": "Як зробити відеозапис вікна програми?",
+    "capabilityId": "screen.record",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.screenshot.launcher"
+    ]
+  },
+  {
+    "id": "intent-en-image-ocr-001",
+    "language": "en",
+    "query": "Read the text in this photo",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-ocr-002",
+    "language": "en",
+    "query": "Turn this scanned page into selectable text",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-ocr-003",
+    "language": "en",
+    "query": "Pull words out of an image file",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-ocr-004",
+    "language": "en",
+    "query": "I have a picture of a receipt and need the text",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-ocr-005",
+    "language": "en",
+    "query": "Recognize text from this screenshot image",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-ocr-001",
+    "language": "uk",
+    "query": "Прочитай текст на фото",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-ocr-002",
+    "language": "uk",
+    "query": "Перетвори скан сторінки на текст",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-ocr-003",
+    "language": "uk",
+    "query": "Дістати слова з картинки",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-ocr-004",
+    "language": "uk",
+    "query": "Є фото квитанції, потрібен текст",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-ocr-005",
+    "language": "uk",
+    "query": "Розпізнати напис на зображенні",
+    "capabilityId": "image.ocr",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-resize-001",
+    "language": "en",
+    "query": "Make this image 800 pixels wide",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-resize-002",
+    "language": "en",
+    "query": "Shrink the photo dimensions",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-resize-003",
+    "language": "en",
+    "query": "Change the size of a PNG",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-resize-004",
+    "language": "en",
+    "query": "Scale this picture down for upload",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-resize-005",
+    "language": "en",
+    "query": "Set a new width and height for the image",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-resize-001",
+    "language": "uk",
+    "query": "Зменшити розміри фотографії",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-resize-002",
+    "language": "uk",
+    "query": "Зроби картинку 800 пікселів завширшки",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-resize-003",
+    "language": "uk",
+    "query": "Поміняти ширину і висоту PNG",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-resize-004",
+    "language": "uk",
+    "query": "Підготувати фото меншого розміру для сайту",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-resize-005",
+    "language": "uk",
+    "query": "Масштабувати зображення без зміни формату",
+    "capabilityId": "image.resize",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-convert-001",
+    "language": "en",
+    "query": "Save this PNG as a JPEG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-convert-002",
+    "language": "en",
+    "query": "Change an image file to WebP",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-convert-003",
+    "language": "en",
+    "query": "Turn the photo into a different format",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-convert-004",
+    "language": "en",
+    "query": "Convert a HEIC picture to JPG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-image-convert-005",
+    "language": "en",
+    "query": "I need this logo exported as PNG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-convert-001",
+    "language": "uk",
+    "query": "Зберегти PNG як JPEG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-convert-002",
+    "language": "uk",
+    "query": "Перетвори HEIC-фото у JPG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-convert-003",
+    "language": "uk",
+    "query": "Змінити формат картинки на WebP",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-convert-004",
+    "language": "uk",
+    "query": "Потрібно експортувати логотип у PNG",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-image-convert-005",
+    "language": "uk",
+    "query": "Зробити зображення в іншому форматі",
+    "capabilityId": "image.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.Photos", "com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-video-compress-001",
+    "language": "en",
+    "query": "Reduce the size of this MP4",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-compress-002",
+    "language": "en",
+    "query": "This video is too heavy to send",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-compress-003",
+    "language": "en",
+    "query": "Make a smaller copy of a movie file",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-compress-004",
+    "language": "en",
+    "query": "Compress footage before uploading it",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-compress-005",
+    "language": "en",
+    "query": "Lower the file size without changing the video type",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-compress-001",
+    "language": "uk",
+    "query": "Зменшити вагу MP4",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-compress-002",
+    "language": "uk",
+    "query": "Це відео завелике для надсилання",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-compress-003",
+    "language": "uk",
+    "query": "Стисни ролик перед завантаженням",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-compress-004",
+    "language": "uk",
+    "query": "Зробити меншу копію відеофайлу",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-compress-005",
+    "language": "uk",
+    "query": "Потрібно, щоб відео займало менше місця",
+    "capabilityId": "video.compress",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-convert-001",
+    "language": "en",
+    "query": "Change this MOV file to MP4",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-convert-002",
+    "language": "en",
+    "query": "Export the clip as WebM",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-convert-003",
+    "language": "en",
+    "query": "Convert a video into another file type",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-convert-004",
+    "language": "en",
+    "query": "Make this recording playable as AVI",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-video-convert-005",
+    "language": "en",
+    "query": "Turn phone footage into an MP4",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-video-convert-001",
+    "language": "uk",
+    "query": "Перетвори MOV-файл у MP4",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-convert-002",
+    "language": "uk",
+    "query": "Експортувати кліп як WebM",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-convert-003",
+    "language": "uk",
+    "query": "Змінити формат відеофайлу",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-convert-004",
+    "language": "uk",
+    "query": "Зробити запис у форматі AVI",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-uk-video-convert-005",
+    "language": "uk",
+    "query": "Конвертуй відео з телефона в MP4",
+    "capabilityId": "video.convert",
+    "acceptableApplicationIdentifiers": ["com.apple.QuickTimePlayerX", "com.apple.iMovieApp"]
+  },
+  {
+    "id": "intent-en-pdf-merge-001",
+    "language": "en",
+    "query": "Put these PDF files into one document",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-merge-002",
+    "language": "en",
+    "query": "Combine several scanned PDFs",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-merge-003",
+    "language": "en",
+    "query": "Join the report pages into a single PDF",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-merge-004",
+    "language": "en",
+    "query": "Append one PDF after another",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-merge-005",
+    "language": "en",
+    "query": "Make one PDF from these separate files",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-merge-001",
+    "language": "uk",
+    "query": "Зібрати кілька PDF в один документ",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-merge-002",
+    "language": "uk",
+    "query": "Об'єднай скановані PDF-файли",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-merge-003",
+    "language": "uk",
+    "query": "Скласти сторінки звіту в один PDF",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-merge-004",
+    "language": "uk",
+    "query": "Додати один PDF після іншого",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-merge-005",
+    "language": "uk",
+    "query": "Зробити один PDF з окремих файлів",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-split-001",
+    "language": "en",
+    "query": "Extract pages 4 to 8 from this PDF",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-split-002",
+    "language": "en",
+    "query": "Save one section of a PDF as a separate file",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-split-003",
+    "language": "en",
+    "query": "Break a large PDF into smaller documents",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-split-004",
+    "language": "en",
+    "query": "Pull out a single page from the PDF",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-pdf-split-005",
+    "language": "en",
+    "query": "Separate this PDF by page ranges",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-split-001",
+    "language": "uk",
+    "query": "Витягнути сторінки 4-8 з PDF",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-split-002",
+    "language": "uk",
+    "query": "Зберегти частину PDF окремим файлом",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-split-003",
+    "language": "uk",
+    "query": "Розбити великий PDF на менші документи",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-split-004",
+    "language": "uk",
+    "query": "Дістати одну сторінку з PDF",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-uk-pdf-split-005",
+    "language": "uk",
+    "query": "Поділити PDF за діапазонами сторінок",
+    "capabilityId": "pdf.split",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-en-files-batch-rename-001",
+    "language": "en",
+    "query": "Rename all these photos with the same pattern",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-en-files-batch-rename-002",
+    "language": "en",
+    "query": "Number a folder of files automatically",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-en-files-batch-rename-003",
+    "language": "en",
+    "query": "Change names for many documents at once",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-en-files-batch-rename-004",
+    "language": "en",
+    "query": "Add a date prefix to a batch of files",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-en-files-batch-rename-005",
+    "language": "en",
+    "query": "Bulk rename the images in this directory",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-files-batch-rename-001",
+    "language": "uk",
+    "query": "Перейменувати всі фото за одним шаблоном",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-files-batch-rename-002",
+    "language": "uk",
+    "query": "Автоматично пронумерувати файли в папці",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-files-batch-rename-003",
+    "language": "uk",
+    "query": "Змінити назви багатьох документів за раз",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-files-batch-rename-004",
+    "language": "uk",
+    "query": "Додати дату на початок групи файлів",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-uk-files-batch-rename-005",
+    "language": "uk",
+    "query": "Масово перейменувати зображення в цій теці",
+    "capabilityId": "files.batch_rename",
+    "acceptableApplicationIdentifiers": []
+  },
+  {
+    "id": "intent-en-files-archive-001",
+    "language": "en",
+    "query": "Zip this folder",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-en-files-archive-002",
+    "language": "en",
+    "query": "Unpack a downloaded archive",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-en-files-archive-003",
+    "language": "en",
+    "query": "Create a compressed file from these documents",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-en-files-archive-004",
+    "language": "en",
+    "query": "Extract the contents of this 7z file",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-en-files-archive-005",
+    "language": "en",
+    "query": "Make an archive for sending several files",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-uk-files-archive-001",
+    "language": "uk",
+    "query": "Заархівувати цю папку",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-uk-files-archive-002",
+    "language": "uk",
+    "query": "Розпакувати завантажений архів",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-uk-files-archive-003",
+    "language": "uk",
+    "query": "Створити ZIP з цих документів",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-uk-files-archive-004",
+    "language": "uk",
+    "query": "Витягнути вміст 7z-файлу",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-uk-files-archive-005",
+    "language": "uk",
+    "query": "Підготувати архів для надсилання кількох файлів",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-en-system-info-001",
+    "language": "en",
+    "query": "Show me details about this computer",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-en-system-info-002",
+    "language": "en",
+    "query": "Check my macOS version and hardware",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-en-system-info-003",
+    "language": "en",
+    "query": "What processor and memory does this machine have?",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-en-system-info-004",
+    "language": "en",
+    "query": "Open local system specs",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-en-system-info-005",
+    "language": "en",
+    "query": "I need the operating system information",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-uk-system-info-001",
+    "language": "uk",
+    "query": "Показати відомості про цей комп'ютер",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-uk-system-info-002",
+    "language": "uk",
+    "query": "Перевірити версію macOS і характеристики",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-uk-system-info-003",
+    "language": "uk",
+    "query": "Який процесор і скільки пам'яті на цьому пристрої?",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-uk-system-info-004",
+    "language": "uk",
+    "query": "Відкрити локальні параметри системи",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-uk-system-info-005",
+    "language": "uk",
+    "query": "Потрібна інформація про операційну систему",
+    "capabilityId": "system.info",
+    "acceptableApplicationIdentifiers": ["com.apple.SystemProfiler"]
+  },
+  {
+    "id": "intent-doc-uk-microphone-001",
+    "language": "uk",
+    "query": "мікрофон",
+    "expectedApplicationIdentifier": "com.apple.QuickTimePlayerX",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.VoiceMemos",
+      "com.apple.garageband10"
+    ]
+  },
+  {
+    "id": "intent-doc-uk-microphone-002",
+    "language": "uk",
+    "query": "записати мікрофон",
+    "expectedApplicationIdentifier": "com.apple.QuickTimePlayerX",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.VoiceMemos",
+      "com.apple.garageband10"
+    ]
+  },
+  {
+    "id": "intent-doc-en-microphone-001",
+    "language": "en",
+    "query": "microphone",
+    "expectedApplicationIdentifier": "com.apple.QuickTimePlayerX",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.VoiceMemos",
+      "com.apple.garageband10"
+    ]
+  },
+  {
+    "id": "intent-doc-uk-screenshot-001",
+    "language": "uk",
+    "query": "скріншот",
+    "capabilityId": "screen.capture",
+    "acceptableApplicationIdentifiers": ["com.apple.screenshot.launcher"]
+  },
+  {
+    "id": "intent-doc-uk-archive-001",
+    "language": "uk",
+    "query": "архів",
+    "capabilityId": "files.archive",
+    "acceptableApplicationIdentifiers": ["com.apple.archiveutility"]
+  },
+  {
+    "id": "intent-doc-en-pdf-001",
+    "language": "en",
+    "query": "pdf",
+    "capabilityId": "pdf.merge",
+    "acceptableApplicationIdentifiers": ["com.apple.Preview"]
+  },
+  {
+    "id": "intent-doc-uk-record-sound-001",
+    "language": "uk",
+    "query": "як записати звук",
+    "expectedApplicationIdentifier": "com.apple.QuickTimePlayerX",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.VoiceMemos",
+      "com.apple.garageband10"
+    ],
+    "paraphraseGroup": "uk-record-sound"
+  },
+  {
+    "id": "intent-doc-uk-record-sound-002",
+    "language": "uk",
+    "query": "записати звук",
+    "expectedApplicationIdentifier": "com.apple.QuickTimePlayerX",
+    "acceptableApplicationIdentifiers": [
+      "com.apple.QuickTimePlayerX",
+      "com.apple.VoiceMemos",
+      "com.apple.garageband10"
+    ],
+    "paraphraseGroup": "uk-record-sound"
+  }
+]

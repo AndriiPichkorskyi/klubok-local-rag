@@ -1,0 +1,110 @@
+[
+  {
+    "id": "ambiguous-en-screen-001",
+    "language": "en",
+    "query": "Capture what is happening on my screen",
+    "acceptableCapabilityIds": ["screen.capture", "screen.record"],
+    "allowUnknown": true,
+    "category": "screen_capture_vs_record",
+    "rationale": "The query could mean a still screenshot or a screen recording."
+  },
+  {
+    "id": "ambiguous-en-image-001",
+    "language": "en",
+    "query": "Prepare this image for upload",
+    "acceptableCapabilityIds": ["image.resize", "image.convert"],
+    "allowUnknown": true,
+    "category": "image_resize_vs_convert",
+    "rationale": "The requested preparation could involve dimensions or file format."
+  },
+  {
+    "id": "ambiguous-en-video-001",
+    "language": "en",
+    "query": "Make this video easier to share",
+    "acceptableCapabilityIds": ["video.compress", "video.convert"],
+    "allowUnknown": true,
+    "category": "video_compress_vs_convert",
+    "rationale": "Sharing can require a smaller size or a different format."
+  },
+  {
+    "id": "ambiguous-en-pdf-001",
+    "language": "en",
+    "query": "Fix these PDF pages into a clean file",
+    "acceptableCapabilityIds": ["pdf.merge", "pdf.split"],
+    "allowUnknown": true,
+    "category": "pdf_merge_vs_split",
+    "rationale": "The query does not say whether pages should be combined or separated."
+  },
+  {
+    "id": "ambiguous-en-files-001",
+    "language": "en",
+    "query": "Organize these project files before sending them",
+    "acceptableCapabilityIds": ["files.batch_rename", "files.archive"],
+    "allowUnknown": true,
+    "category": "rename_vs_archive",
+    "rationale": "Organizing may mean renaming or packaging."
+  },
+  {
+    "id": "ambiguous-en-image-text-001",
+    "language": "en",
+    "query": "Get something useful out of this scanned image",
+    "acceptableCapabilityIds": ["image.ocr", "image.convert"],
+    "allowUnknown": true,
+    "category": "image_ocr_vs_convert",
+    "rationale": "The query is underspecified between extracting text and changing format."
+  },
+  {
+    "id": "ambiguous-uk-screen-001",
+    "language": "uk",
+    "query": "Захопити те, що відбувається на екрані",
+    "acceptableCapabilityIds": ["screen.capture", "screen.record"],
+    "allowUnknown": true,
+    "category": "screen_capture_vs_record",
+    "rationale": "Запит може означати скріншот або відеозапис."
+  },
+  {
+    "id": "ambiguous-uk-image-001",
+    "language": "uk",
+    "query": "Підготувати зображення для завантаження на сайт",
+    "acceptableCapabilityIds": ["image.resize", "image.convert"],
+    "allowUnknown": true,
+    "category": "image_resize_vs_convert",
+    "rationale": "Підготовка може стосуватися розміру або формату."
+  },
+  {
+    "id": "ambiguous-uk-video-001",
+    "language": "uk",
+    "query": "Зробити відео зручним для надсилання",
+    "acceptableCapabilityIds": ["video.compress", "video.convert"],
+    "allowUnknown": true,
+    "category": "video_compress_vs_convert",
+    "rationale": "Надсилання може вимагати меншого розміру або іншого формату."
+  },
+  {
+    "id": "ambiguous-uk-pdf-001",
+    "language": "uk",
+    "query": "Навести лад зі сторінками PDF",
+    "acceptableCapabilityIds": ["pdf.merge", "pdf.split"],
+    "allowUnknown": true,
+    "category": "pdf_merge_vs_split",
+    "rationale": "Неясно, сторінки треба об'єднати чи розділити."
+  },
+  {
+    "id": "ambiguous-uk-files-001",
+    "language": "uk",
+    "query": "Підготувати ці файли перед відправкою",
+    "acceptableCapabilityIds": ["files.batch_rename", "files.archive"],
+    "allowUnknown": true,
+    "category": "rename_vs_archive",
+    "rationale": "Підготовка може означати перейменування або створення архіву."
+  },
+  {
+    "id": "ambiguous-uk-image-text-001",
+    "language": "uk",
+    "query": "Дістати корисне з цього сканованого зображення",
+    "acceptableCapabilityIds": ["image.ocr", "image.convert"],
+    "allowUnknown": true,
+    "category": "image_ocr_vs_convert",
+    "rationale": "Запит не уточнює, треба текст чи інший формат файлу."
+  }
+]

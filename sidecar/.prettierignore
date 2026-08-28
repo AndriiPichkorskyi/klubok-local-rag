@@ -1,0 +1,21 @@
+dist
+node_modules
+src-tauri/target
+target
+coverage
+
+package-lock.json
+src-tauri/Cargo.lock
+src-tauri/gen
+
+# Verbatim network-fetched HTML captures used as Rust test fixtures, not
+# authored source -- prettier's strict HTML parser rejects real-world markup
+# quirks (e.g. Apple's own non-void <source>...</source>) that browsers accept.
+src-tauri/tests/fixtures
+
+# Harness-generated measurement report. `discovered_capability_catalog_ablation`
+# must produce byte-identical output on two runs against the same frozen
+# fixture (that is the acceptance criterion it exists to prove); reformatting
+# it afterwards would make the second run look like a diff.
+docs/research/discovered-capability-catalog-ablation.md
+docs/research/local-ai-documentation-evidence-ranking-impact.md

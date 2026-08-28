@@ -1,0 +1,194 @@
+[
+  {
+    "id": "ood-en-cooking-001",
+    "language": "en",
+    "query": "What should I cook tonight?",
+    "expectedCapabilityId": null,
+    "category": "cooking",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-cooking-002",
+    "language": "en",
+    "query": "Record my grandmother's soup recipe",
+    "expectedCapabilityId": null,
+    "category": "cooking",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-en-weather-001",
+    "language": "en",
+    "query": "What is the weather today?",
+    "expectedCapabilityId": null,
+    "category": "weather",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-email-001",
+    "language": "en",
+    "query": "Write a polite email asking for feedback",
+    "expectedCapabilityId": null,
+    "category": "email_writing",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-arithmetic-001",
+    "language": "en",
+    "query": "What is 28 times 14?",
+    "expectedCapabilityId": null,
+    "category": "arithmetic",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-entertainment-001",
+    "language": "en",
+    "query": "Recommend a movie for Friday night",
+    "expectedCapabilityId": null,
+    "category": "entertainment",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-travel-001",
+    "language": "en",
+    "query": "Book a flight to Warsaw",
+    "expectedCapabilityId": null,
+    "category": "travel",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-factual-001",
+    "language": "en",
+    "query": "Who wrote The Master and Margarita?",
+    "expectedCapabilityId": null,
+    "category": "general_factual",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-en-misleading-archive-001",
+    "language": "en",
+    "query": "Find the news archive from last year",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-en-misleading-compress-001",
+    "language": "en",
+    "query": "Give me a compressed summary of this novel",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-en-misleading-convert-001",
+    "language": "en",
+    "query": "Convert dollars to euros",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-en-calendar-001",
+    "language": "en",
+    "query": "Remind me to call my thesis supervisor tomorrow",
+    "expectedCapabilityId": null,
+    "category": "calendar",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-cooking-001",
+    "language": "uk",
+    "query": "Що приготувати на вечерю?",
+    "expectedCapabilityId": null,
+    "category": "cooking",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-cooking-002",
+    "language": "uk",
+    "query": "Приготувати воду для чаю",
+    "expectedCapabilityId": null,
+    "category": "cooking",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-misleading-record-001",
+    "language": "uk",
+    "query": "Записати рецепт борщу в блокнот",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-uk-weather-001",
+    "language": "uk",
+    "query": "Яка сьогодні погода у Львові?",
+    "expectedCapabilityId": null,
+    "category": "weather",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-email-001",
+    "language": "uk",
+    "query": "Напиши лист викладачу з проханням про консультацію",
+    "expectedCapabilityId": null,
+    "category": "email_writing",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-arithmetic-001",
+    "language": "uk",
+    "query": "Скільки буде 128 поділити на 4?",
+    "expectedCapabilityId": null,
+    "category": "arithmetic",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-entertainment-001",
+    "language": "uk",
+    "query": "Порадь серіал на вихідні",
+    "expectedCapabilityId": null,
+    "category": "entertainment",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-travel-001",
+    "language": "uk",
+    "query": "Забронювати квиток до Варшави",
+    "expectedCapabilityId": null,
+    "category": "travel",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-factual-001",
+    "language": "uk",
+    "query": "Хто написав Лісову пісню?",
+    "expectedCapabilityId": null,
+    "category": "general_factual",
+    "lexicallyMisleading": false
+  },
+  {
+    "id": "ood-uk-misleading-archive-001",
+    "language": "uk",
+    "query": "Архів новин за минулий рік",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-uk-misleading-compress-001",
+    "language": "uk",
+    "query": "Стисни зміст цієї статті до трьох речень",
+    "expectedCapabilityId": null,
+    "category": "lexical_negative",
+    "lexicallyMisleading": true
+  },
+  {
+    "id": "ood-uk-calendar-001",
+    "language": "uk",
+    "query": "Нагадай подзвонити мамі завтра",
+    "expectedCapabilityId": null,
+    "category": "calendar",
+    "lexicallyMisleading": false
+  }
+]

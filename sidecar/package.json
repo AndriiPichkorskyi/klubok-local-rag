@@ -1,0 +1,36 @@
+{
+  "name": "local-tool-rag-assistant-sidecar",
+  "version": "1.0.0",
+  "description": "Backend-модулі 2.1-2.3: bootstrap, індексація документації, RAG-пошук. Запускається як sidecar для Tauri або самостійно з термінала.",
+  "type": "module",
+  "main": "src/rpc/server.js",
+  "scripts": {
+    "cli": "node src/cli/index.js",
+    "rpc": "node src/rpc/server.js",
+    "rpc:dev": "node --watch src/rpc/server.js",
+    "rpc:debug": "node --watch --inspect src/rpc/server.js",
+    "test:rag": "node src/tests/test-rag.js",
+    "test:rag:all": "node src/tests/run-all-tests.js",
+    "format": "prettier --write . --ignore-unknown"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.7.0",
+    "@lancedb/lancedb": "^0.30.0",
+    "axios": "^1.19.0",
+    "cheerio": "^1.2.0",
+    "marked": "^15.0.12",
+    "marked-terminal": "^7.3.0",
+    "p-limit": "^7.3.1",
+    "p-queue": "^9.3.3",
+    "picocolors": "^1.1.1",
+    "plist": "^5.0.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^6.0.1",
+    "turndown": "^7.2.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "prettier": "^3.9.6"
+  }
+}

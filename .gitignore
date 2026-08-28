@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Дані, які не місце в репозиторії
+# УВАГА: src-tauri/icons НЕ ігноруємо — без них Tauri не збереться (272 КБ)
+*lancedb_data*
+*.sqlite
+sidecar/data*
+sidecar/test-reports/
+
+# Тимчасове
+_to_delete/
+.env

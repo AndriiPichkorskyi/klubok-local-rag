@@ -1,0 +1,185 @@
+/* Оформлення Spotlight-пошуку. Тільки змінні з src/ui.css, жодних бібліотек. */
+
+.sp-root {
+  min-height: 100vh;
+  /* Знизу вікна — фіксований футер каркаса (~28px). Лишаємо під нього місце. */
+  padding: 0 20px 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Порожній стан і пошук: поле по центру. З результатом — плавно йде вгору. */
+.sp-root { padding-top: 30vh; transition: padding-top 220ms ease; }
+.sp-root[data-phase="done"], .sp-root[data-phase="error"] { padding-top: 6vh; }
+
+.sp-stage { width: 100%; max-width: 720px; }
+
+/* ── Поле вводу ─────────────────────────────────────────────── */
+.sp-field { position: relative; }
+
+.sp-input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 20px;
+  line-height: 1.4;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--fg);
+  outline: none;
+}
+.sp-input:focus { border-color: var(--accent); background: var(--bg); }
+.sp-input::placeholder { color: var(--muted); }
+
+.sp-hint {
+  margin: 10px 2px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sp-hint kbd {
+  font: 11px/1 var(--mono);
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+}
+.sp-examples {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sp-example {
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+/* ── Прогрес ────────────────────────────────────────────────── */
+.sp-progress { margin-top: 18px; }
+.sp-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.sp-progress-msg { font-size: 14px; color: var(--fg); }
+.sp-progress-time { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+.sp-bar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.sp-bar-fill { height: 100%; background: var(--accent); transition: width 200ms ease; }
+/* Невідомий відсоток — «біжуча» смуга, а не завислий екран. */
+.sp-bar-fill.is-indeterminate {
+  width: 35%;
+  animation: sp-slide 1.3s ease-in-out infinite;
+}
+@keyframes sp-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-bar-fill.is-indeterminate { animation: none; width: 100%; opacity: .4; }
+  .sp-root { transition: none; }
+}
+
+.sp-progress-actions { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+.sp-note { font-size: 12px; color: var(--muted); }
+
+/* ── Результат ──────────────────────────────────────────────── */
+.sp-result { margin-top: 22px; }
+
+.sp-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 18px 20px;
+}
+.sp-card[data-selected="true"] { border-color: var(--accent); }
+
+.sp-app-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.sp-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sp-reason { margin-top: 10px; }
+.sp-reason p:first-child { margin-top: 0; }
+.sp-reason p:last-child { margin-bottom: 0; }
+
+.sp-steps { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.sp-steps-body { position: relative; }
+.sp-steps-body.is-clamped {
+  max-height: 260px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+}
+.sp-doc-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+
+/* Типографіка тексту з довідки */
+.sp-md h1, .sp-md h2, .sp-md h3, .sp-md h4 { font-size: 15px; margin: 14px 0 6px; }
+.sp-md p { margin: 8px 0; }
+.sp-md ul, .sp-md ol { margin: 8px 0; padding-left: 22px; }
+.sp-md li { margin: 4px 0; }
+.sp-md img { max-width: 100%; height: auto; }
+.sp-md table { border-collapse: collapse; display: block; overflow-x: auto; }
+.sp-md td, .sp-md th { border: 1px solid var(--line); padding: 4px 8px; }
+
+/* ── Альтернативи ───────────────────────────────────────────── */
+.sp-alts { margin-top: 18px; }
+.sp-alts-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.sp-alts-list { list-style: none; margin: 0; padding: 0; }
+
+.sp-alt {
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.sp-alt[data-selected="true"] { border-color: var(--accent); }
+
+.sp-alt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 15px;
+}
+.sp-alt-head:hover { background: var(--panel); }
+.sp-alt-caret { color: var(--muted); font-size: 11px; width: 12px; flex: none; }
+.sp-alt-body { padding: 0 12px 12px 32px; font-size: 13px; color: var(--muted); }
+.sp-alt-body .sp-note { margin-bottom: 8px; display: block; }
+
+/* ── Порожньо / помилка ─────────────────────────────────────── */
+.sp-empty { border: 1px dashed var(--line); border-radius: 12px; padding: 18px 20px; }
+.sp-empty h2 { margin: 0 0 8px; font-size: 17px; }
+.sp-tips { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+.sp-tips li { margin: 4px 0; }
+.sp-seen { margin-top: 12px; font-size: 12px; color: var(--muted); }
+
+.sp-error { border: 1px solid var(--err); border-radius: 12px; padding: 18px 20px; }
+.sp-error h2 { margin: 0 0 8px; font-size: 17px; color: var(--err); }
+.sp-error p { margin: 0; }
+
+.sp-meta { margin-top: 14px; font-size: 12px; color: var(--muted); }
