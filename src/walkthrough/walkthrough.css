@@ -1,0 +1,161 @@
+/* Оформлення вікна підказки. Лише змінні з src/ui.css, жодних бібліотек.
+   Вікно маленьке і стоїть у кутку екрана, тому щільність важливіша за повітря,
+   а розмір шрифту інструкції — навпаки, більший за звичайний: її читають краєм ока. */
+
+.wt {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100vh;
+  padding: 12px 14px 14px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* Той самий компонент, вбудований у головне вікно (запасний шлях). */
+.wt-embedded {
+  min-height: 0;
+  max-width: 460px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+/* ── Шапка ──────────────────────────────────────────────────── */
+.wt-head { display: flex; align-items: center; gap: 8px; }
+.wt-app {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wt-chip {
+  font-size: 10px;
+  letter-spacing: .04em;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+}
+.wt-close {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 13px;
+  line-height: 1.2;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+.wt-close:hover { color: var(--fg); }
+
+/* ── Де ми в послідовності ──────────────────────────────────── */
+.wt-track { display: flex; align-items: center; gap: 8px; }
+.wt-track-label {
+  font-size: 11px;
+  letter-spacing: .04em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.wt-track-bar { display: flex; flex: 1; gap: 3px; }
+.wt-seg {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line);
+}
+.wt-seg[data-done="true"] { background: var(--accent); }
+/* План невідомий: показуємо один нейтральний штрих, а не вигаданий знаменник. */
+.wt-track-open {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+/* ── Крок ───────────────────────────────────────────────────── */
+.wt-body { display: flex; flex-direction: column; gap: 10px; }
+.wt-step { transition: opacity 160ms ease; }
+/* Чекаємо на зір — крок притлумлений, але видимий: вікно живе, а не зависло. */
+.wt-step[data-dim="true"] { opacity: .45; }
+
+.wt-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.wt[data-tone="warn"] .wt-title { color: var(--warn); }
+.wt[data-tone="done"] .wt-title { color: var(--ok); }
+.wt[data-tone="unsure"] .wt-title { color: var(--muted); }
+
+.wt-instruction {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+}
+.wt-target { margin: 6px 0 0; font-size: 12px; color: var(--accent); }
+.wt-hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.wt-detail {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-word;
+}
+.wt-note { margin: 0; font-size: 12px; color: var(--warn); }
+
+/* ── Очікування зору ────────────────────────────────────────── */
+.wt-wait { display: flex; flex-direction: column; gap: 6px; }
+.wt-wait-row { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
+.wt-wait-text { font-size: 13px; }
+.wt-wait-time { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.wt-wait-why { margin: 0; font-size: 11px; color: var(--muted); }
+
+.wt-bar { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.wt-bar-fill {
+  height: 100%;
+  width: 35%;
+  background: var(--accent);
+  animation: wt-slide 1.3s ease-in-out infinite;
+}
+@keyframes wt-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wt-bar-fill { animation: none; width: 100%; opacity: .4; }
+  .wt-step { transition: none; }
+}
+
+/* ── Дії ────────────────────────────────────────────────────── */
+.wt-actions { display: flex; gap: 8px; align-items: center; }
+.wt-btn { font: inherit; }
+.wt-btn-main {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 15px;
+  font-weight: 500;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wt-btn-quiet { font-size: 13px; color: var(--muted); }
+
+/* Кнопка порятунку сесії. Тиха за кольором, але на видноті й на всю ширину:
+   ховати її означало б лишити людину сам на сам з помилкою моделі. */
+.wt-btn-stuck {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--warn);
+  border-style: dashed;
+  border-color: var(--warn);
+  background: transparent;
+}
+
+.wt-failure { display: flex; flex-direction: column; }
+.wt-failure .wt-actions { margin-top: 10px; }
+
+/* ── Запуск із результату пошуку ────────────────────────────── */
+.wt-launch { margin-top: 14px; }
+.wt-launch-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }

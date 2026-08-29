@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import pc from "picocolors";
 import * as p from "@clack/prompts";
+import { renderLanguageTables } from "../tests/language.js";
 
 /**
  * Рендерить таблицю зі звітом про тестування RAG.
@@ -11,23 +12,31 @@ import * as p from "@clack/prompts";
  * @param {Object} reportData - Об'єкт звіту з JSON.
  */
 export function renderReportTable(reportData) {
-  console.log(
-    "\n==========================================================================================================",
-  );
+  // Ширина колонки «Режим» рахується від найдовшої назви, а не фіксована:
+  // з появою осей systemPrompt і seed назви на кшталт
+  // `hybrid+XML|sp=system|seed=1` не влазили в 25 символів і зсували всі
+  // наступні колонки. Мінімум лишається старий, щоб вигляд знайомих звітів
+  // не змінився.
+  const modeNames = Object.keys(reportData.modes || {});
+  const MODE_COL = Math.max(25, ...modeNames.map((name) => name.length + 2));
+  // Решта колонок: 16 + 18 + 18 + 12 + 8 (RAM) — стільки ж, скільки було.
+  const RULE = MODE_COL + 76;
+
+  console.log("\n" + "=".repeat(RULE + 5));
   console.log(pc.bold(`📊 ПІДСУМКОВЕ ПОРІВНЯННЯ РЕЖИМІВ (SEARCH MODES):`));
   if (reportData.timestamp) {
     console.log(pc.gray(`📅 Дата звіту: ${new Date(reportData.timestamp).toLocaleString()}`));
   }
-  console.log("=".repeat(101));
+  console.log("=".repeat(RULE));
   console.log(
-    pc.bold("Режим".padEnd(25)) +
+    pc.bold("Режим".padEnd(MODE_COL)) +
       pc.bold("Успішність".padEnd(16)) +
       pc.bold("Час (Заг/Сер)".padEnd(18)) +
       pc.bold("In/Out Токени".padEnd(18)) +
       pc.bold("Швидкість".padEnd(12)) +
       pc.bold("RAM"),
   );
-  console.log("-".repeat(101));
+  console.log("-".repeat(RULE));
 
   let grandTotalTime = 0;
   let grandTotalInputTokens = 0;
@@ -51,7 +60,7 @@ export function renderReportTable(reportData) {
     else passRateStr = pc.red(passRateText);
 
     console.log(
-      mode.padEnd(25) +
+      mode.padEnd(MODE_COL) +
         passRateStr +
         `${totalTimeSec}c / ${avgTime}c`.padEnd(18) +
         `${s.totalInputTokens} / ${s.totalOutputTokens}`.padEnd(18) +
@@ -60,13 +69,20 @@ export function renderReportTable(reportData) {
     );
   }
 
-  console.log("=".repeat(101));
+  console.log("=".repeat(RULE));
   console.log(pc.bold(`⏱  ЗАГАЛЬНИЙ ЧАС ВСІХ ТЕСТІВ: ${(grandTotalTime / 1000).toFixed(1)} сек`));
   console.log(
     pc.bold(
       `🪙  ЗАГАЛЬНО ТОКЕНІВ: ${grandTotalInputTokens} (Input) / ${grandTotalOutputTokens} (Output)`,
     ),
   );
+
+  // Мовна розбивка друкується тут, а не в тестах: так її видно і при
+  // перегляді збереженого звіту з меню CLI, а не лише одразу після прогону.
+  if (reportData.languageBreakdown) {
+    renderLanguageTables(reportData.languageBreakdown);
+  }
+
   console.log("");
 }
 

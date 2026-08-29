@@ -10,6 +10,13 @@ import { fileURLToPath } from "url";
 import { renderReportTable } from "../cli/reports.js";
 import { logger } from "../services/logger.service.js";
 import { createReportStream } from "./report-stream.js";
+import {
+  resolveCaseLanguage,
+  createLanguageTally,
+  summarizeLanguages,
+  LANGUAGE_LABELS,
+} from "./language.js";
+import { createHash } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,11 +79,27 @@ export async function runExternalTests(onProgress = () => {}) {
     searchMode: config.rag.searchMode,
     enableXmlTags: config.rag.enableXmlTags,
     enableContextReordering: config.rag.enableContextReordering,
+    systemPromptMode: config.rag.systemPromptMode,
+    seed: config.rag.seed,
+    temperature: config.rag.temperature,
   };
   try {
     config.rag.searchMode = "hybrid";
     config.rag.enableXmlTags = true;
     config.rag.enableContextReordering = true;
+    // Осі systemPrompt/seed/temperature EXTERNAL-тест не перебирає — бере
+    // значення за замовчуванням із конфіга і записує їх у звіт, щоб через
+    // місяць було видно, чим саме отримані ці числа.
+    const externalParams = {
+      search: "hybrid",
+      xml: true,
+      reorder: true,
+      systemPrompt: config.rag.systemPromptMode ?? "system",
+      seed: config.rag.seed ?? null,
+      temperature: config.rag.temperature ?? 0.1,
+      chatModel: config.ollama.chatModel,
+      embedModel: config.embedModelName,
+    };
 
     const intents = await loadDataset("dataset_intents.json");
     const ood = await loadDataset("dataset_ood.json");
@@ -105,6 +128,8 @@ export async function runExternalTests(onProgress = () => {}) {
           expectedApp: appNames,
           type: "valid",
           category: "intents",
+          // Мова задана в самому датасеті і перевірена вручну.
+          language: item.language,
         });
       }
     }
@@ -115,6 +140,7 @@ export async function runExternalTests(onProgress = () => {}) {
         expectedApp: [],
         type: "not_found",
         category: "ood",
+        language: item.language,
       });
     }
 
@@ -127,10 +153,34 @@ export async function runExternalTests(onProgress = () => {}) {
         expectedApp: [],
         type: "ambiguous",
         category: "ambiguous",
+        language: item.language,
       });
     }
 
     console.log(`\nВсього завантажено ${TEST_CASES.length} зовнішніх тестів.`);
+
+    // Мова кожного кейса — один раз до прогону (див. tests/language.js).
+    const caseLanguage = new Map();
+    let guessedLanguageCases = 0;
+    const languageCensus = {};
+    for (const test of TEST_CASES) {
+      const resolved = resolveCaseLanguage(test);
+      caseLanguage.set(test, resolved);
+      if (resolved.languageSource === "auto") guessedLanguageCases += 1;
+      languageCensus[resolved.language] = (languageCensus[resolved.language] || 0) + 1;
+    }
+    console.log(
+      pc.cyan(
+        "Мови набору: " +
+          Object.entries(languageCensus)
+            .map(([lang, count]) => `${LANGUAGE_LABELS[lang] || lang} — ${count}`)
+            .join(", ") +
+          (guessedLanguageCases > 0
+            ? ` (з них ${guessedLanguageCases} визначено автоматично)`
+            : " (усі задані явно)"),
+      ),
+    );
+    const langTally = createLanguageTally();
 
     let passed = 0;
     let failed = 0;
@@ -150,9 +200,34 @@ export async function runExternalTests(onProgress = () => {}) {
         embed: config.embedModelName,
         chat: config.ollama.chatModel,
       },
+      // Той самий набір заголовкових полів, що й у RAG-бенчмарку: форма звіту
+      // тепер одна на обидва тести.
+      benchmarkKind: "external",
+      axes: {
+        search: [externalParams.search],
+        xml: [externalParams.xml],
+        reorder: [externalParams.reorder],
+        systemPrompt: [externalParams.systemPrompt],
+        seed: [externalParams.seed],
+      },
+      modeCount: 1,
+      expectedRuns: TEST_CASES.length,
+      defaults: {
+        enableJsonFormat: config.rag.enableJsonFormat,
+        topK: config.rag.topK,
+        excludeLocalDocs: config.rag.excludeLocalDocs,
+      },
     };
     report = createReportStream(reportPath, reportHeader);
-    await report.beginMode("external_hybrid");
+    await report.beginMode("external_hybrid", externalParams);
+
+    console.log(
+      pc.cyan(
+        `Режим: hybrid+XML+Reorder | sp=${externalParams.systemPrompt} | ` +
+          `seed=${externalParams.seed === null ? "none" : externalParams.seed} | ` +
+          `t=${externalParams.temperature} | ${TEST_CASES.length} прогонів LLM.`,
+      ),
+    );
     const acc = {
       count: 0,
       timeMs: 0,
@@ -190,7 +265,12 @@ export async function runExternalTests(onProgress = () => {}) {
         }
         const memUsageMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
 
-        const { response, recommendedApp } = result;
+        const { response, recommendedApp, rawLlmOutput } = result;
+        // Той самий побайтовий відбиток відповіді, що й у RAG-бенчмарку.
+        const rawOutputHash =
+          typeof rawLlmOutput === "string"
+            ? createHash("sha256").update(rawLlmOutput).digest("hex")
+            : null;
         console.log(
           `${pc.blue(`[Тест ${testIndex + 1}/${TEST_CASES.length} | ${test.category}]:`)} "${test.query}" -> ${pc.yellow(recommendedApp)}`,
         );
@@ -261,8 +341,13 @@ export async function runExternalTests(onProgress = () => {}) {
           acc.tpsSum += tps;
           acc.tpsCount += 1;
         }
+        const { language, languageSource } = caseLanguage.get(test);
+        langTally.add(language, isSuccess, languageSource === "auto");
+
         await report.addResult({
           query: test.query,
+          language,
+          languageSource,
           expected: test.expectedApp ? test.expectedApp.join(", ") : test.type,
           got: recommendedApp,
           success: isSuccess,
@@ -272,6 +357,7 @@ export async function runExternalTests(onProgress = () => {}) {
           memory: memUsageMB,
           inputTokens,
           outputTokens,
+          rawOutputHash,
         });
       }),
     );
@@ -295,16 +381,27 @@ export async function runExternalTests(onProgress = () => {}) {
       avgMem: acc.memSum / (acc.count || 1),
       totalInputTokens: acc.inputTokens,
       totalOutputTokens: acc.outputTokens,
+      byLanguage: langTally.snapshot(),
     };
     await report.endMode(modeSummary);
+
+    // Розбивка за мовою запиту. Саме тут вона й важлива: у зовнішніх датасетах
+    // поділ між українською та англійською майже рівний (84 / 79 / 1 нейтральний),
+    // тож крослінгвальний результат вимірюється на збалансованому наборі.
+    const languageBreakdown = summarizeLanguages(
+      [{ name: "external_hybrid", search: externalParams.search }],
+      { external_hybrid: modeSummary },
+      guessedLanguageCases,
+    );
+    const footer = { languageBreakdown };
+
     // Хвіст звіту і зняття суфікса .partial — самі результати вже на диску.
-    await report.close();
+    await report.close(footer);
 
-    // Для таблиці в терміналі потрібні лише підсумки, не результати.
-    const reportSummary = { ...reportHeader, modes: { external_hybrid: { summary: modeSummary } } };
-
-    // Вивід таблиці порівняння
-    renderReportTable(reportSummary);
+    // Вивід таблиці порівняння. Об'єкт бере той самий потоковий записувач,
+    // що й у test-rag.js: власної збірки {summary} тут більше немає, тож
+    // форма й порядок ключів у двох тестах не розходяться.
+    renderReportTable(report.summaryView(footer));
     console.log(`📁 Детальний звіт збережено у: ${reportPath}\n`);
 
     onProgress("EXTERNAL-тести завершено.", 100);

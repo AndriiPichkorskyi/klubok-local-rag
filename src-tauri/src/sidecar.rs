@@ -66,7 +66,7 @@ impl Sidecar {
 }
 
 /// Шукаємо корінь проєкта (там, де лежить config/pipeline.config.json), піднімаючись від cwd.
-fn find_root() -> PathBuf {
+pub(crate) fn find_root() -> PathBuf {
     let mut dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     loop {
         if dir.join("config/pipeline.config.json").is_file() {

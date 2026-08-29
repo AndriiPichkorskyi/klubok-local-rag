@@ -55,11 +55,15 @@ WebSocket, `ws://127.0.0.1:<config.rpc.port>` (за замовчуванням 1
 | `reports.list` | — | список файлів у `sidecar/test-reports/` |
 | `reports.read` | `{name}` | вміст одного звіту; `name` — лише ім'я файлу, без шляхів |
 | `job.cancel` | `{id}` | скасувати довгу операцію (див. «Скасування довгих операцій») |
+| `walkthrough.start` | `{appId, goal, docId?}` | модуль 2.5: створює сесію ведення по інтерфейсу |
+| `walkthrough.step` | `{sessionId, screenshotPath}` | наступний крок за знімком екрана |
+| `walkthrough.stuck` | `{sessionId, screenshotPath}` | повторний аналіз того самого екрана іншим промптом |
+| `walkthrough.finish` | `{sessionId}` | закриває сесію і видаляє знімки |
 
 Усі методи `pipeline.*` додатково мають у результаті поле `cancelled` (boolean).
 Усі методи, що **пишуть** у базу (`pipeline.*`, `db.clear`), беруть файл-замок;
 методи читання (`query`, `db.stats`, `reports.*`, `ping`, `bootstrap.*`, `config.*`,
-`tests.*`) не беруть його ніколи.
+`tests.*`, `walkthrough.*`) не беруть його ніколи.
 
 ## Уточнення до окремих методів
 
@@ -70,6 +74,12 @@ WebSocket, `ws://127.0.0.1:<config.rpc.port>` (за замовчуванням 1
 `excludeLocal` не передане або `null` — береться `config.rag.excludeLocalDocs`.
 Обидва параметри реально впливають на гілку пошуку; фактичні значення
 повертаються в `result.retrievalStats.searchMode` і `.excludeLocal`.
+
+Осі бенчмарку (`rag.systemPromptMode`, `rag.seed`, `rag.temperature`) на `query`
+теж діють, але лише через значення за замовчуванням із конфіга: окремих
+параметрів методу для них немає навмисно — це осі експерименту, а не ручки
+користувача. Типовий конфіг (`system` / `42` / `0.1`) дає рівно той самий
+запит до Ollama, що й до їх появи.
 
 Результат завжди має однаковий набір полів, зокрема й тоді, коли пошук нічого
 не знайшов: `{response, rawLlmOutput, recommendedApp, alternativeApps,
@@ -223,17 +233,123 @@ contextApps, executionTimeMs, ollamaMetrics, retrievalStats}`. Поля, яки�
 Якщо `config.bootstrap.autoPull` = `true`, метод сам тягне відсутні обов'язкові
 моделі (з подіями `progress`) і перелічує їх у `models.autoPulled`.
 
+### `walkthrough.*`
+Модуль 2.5. Повний контракт (сценарій, три системи координат, два режими) —
+`docs/contracts/walkthrough.md`; тут лише те, що стосується протоколу.
+
+* Методи **не беруть файл-замок**: вони лише читають `apps`, `document_links`,
+  `web_documents` і `chunks_fts`. Схему і дані не змінюють.
+* `walkthrough.step` і `walkthrough.stuck` — **довгі й скасовні**: `ctx.signal`
+  доходить до HTTP-запиту в Ollama (`axios`), тож `job.cancel({id})` обриває
+  саме виклик зору, а метод завершується штатним кадром
+  `{"cancelled": true, "method": "walkthrough.step", ...}` — як і будь-яка
+  інша скасована задача.
+* Обидва шлють `progress` без `pct`: зменшення кадру і виклик моделі.
+
+`walkthrough.start` повертає `{sessionId, appName, planned[]}` плюс довідкові
+поля `stepSource`, `docs[]` (які саме статті довідки взято), `docsSource`
+(`docId` / `fts` / `any` / `none`) і `screenshotDir`. У режимі `vision`
+`planned` порожній: плану немає за задумом.
+
+`walkthrough.step` і `walkthrough.stuck` повертають РІВНО ту форму, що описана
+в `walkthrough.md`: `{stepIndex, totalSteps, instruction, target, state, source,
+elapsedMs}`. Уточнення до полів:
+
+* `totalSteps` — довжина плану в режимі `plan`; у режимі `vision` завжди `null`.
+* `source` — `plan` лише тоді, коли інструкцію справді взято з плану. Якщо в
+  режимі `plan` зір каже, що екран не той (`app_not_started`, `wrong_window`,
+  `unclear`), інструкцію дає зір і `source` дорівнює `vision`: вести людину до
+  кнопки у вікні, якого немає, гірше, ніж відступити від плану.
+* `stepIndex` зсувається лише після корисного кроку: після стану `unclear` і
+  після `walkthrough.stuck` він лишається тим самим.
+* `target` — `null` завжди, коли елемента не видно, а також коли модель
+  назвала елемент, але сама ж повідомила `app_not_started`/`wrong_window`.
+  Координати рамки — **нормалізовані 0..1** відносно кадру; переводить їх у
+  точки той, хто малює (див. `walkthrough.md`).
+
+**Помилки моделі — це `state`, а не кадр `error`.** Недоступна Ollama, таймаут
+(`walkthrough.visionTimeoutSec`), відповідь не за схемою, відсутній знімок
+(не наданий дозвіл на запис екрана) — усе це повертається як звичайний крок зі
+станом `unclear` і поясненням у `instruction`. Кадром `error` завершуються лише
+помилки виклику: невідома сесія, порожній `goal`, невідомий `stepSource`,
+відсутня в базі програма, непідтримувана платформа.
+
 ### `tests.run`, `tests.runExternal`
 Обидва шлють події `progress` з `pct` по ходу прогону і повертають об'єкт
 `{ok, totalCases, passed, failed, passRate, reportPath}` (`ok` — жоден кейс не
 провалився). Недоступна Ollama — це `error` у відповіді, а не завершення
 процесу. Глобальний `config` після прогону лишається таким, яким був до нього.
 
+`tests.run` перебирає **матрицю режимів із конфіга** — `rag.benchmark.axes`
+у `config/pipeline.config.json`. Осі: `search`, `xml`, `reorder`, `systemPrompt`
+(`system` / `inline` / `none`) і `seed` (числа або `null`). Режими — повний
+добуток осей; щоб зафіксувати вісь, у ній лишають одне значення. Типові
+значення конфіга дають ті самі 12 режимів і ті самі їх назви, що й раніше.
+Очікувану кількість прогонів (`режими × кейси`) метод друкує й шле першим
+кадром `progress` ще до першого запиту до LLM. `rag.benchmark.maxModes`
+(0 = без обмеження) не дає випадково запустити всю матрицю: перевищення —
+це `error` до початку прогону.
+
 Звіт пишеться на диск **поступово**, у міру готовності кожного кейса, а не одним
-обсягом наприкінці. Форма файла не змінилась
-(`{timestamp, totalCases, models, modes:{"<режим>":{results:[…], summary:{…}}}}`),
-але поки прогін триває, файл має ім'я `<звіт>.json.partial` і перейменовується
-на `.json` лише при штатному завершенні. Наслідки:
+обсягом наприкінці, і поки прогін триває, файл має ім'я `<звіт>.json.partial`
+і перейменовується на `.json` лише при штатному завершенні.
+
+**Форма звіту розширилась** (стара частина — `timestamp`, `totalCases`,
+`models`, `modes.*.summary` — лишилась на місці, тож `cli/reports.js` і
+`src/dev/ReportTable.jsx` читають звіт як читали):
+
+```jsonc
+{
+  "timestamp": "…", "totalCases": 26,
+  "models": {"embed": "…", "chat": "…"},
+  "benchmarkKind": "rag",              // або "external"
+  "axes": {…},                          // матриця, якою отримано звіт
+  "modeCount": 12, "expectedRuns": 312,
+  "defaults": {"enableJsonFormat": true, "topK": 15, "excludeLocalDocs": false},
+  "modes": {
+    "<режим>": {
+      "params": {"search","xml","reorder","systemPrompt","seed",
+                 "temperature","chatModel","embedModel"},  // НОВЕ, перед results
+      "results": [ {…, "rawOutputHash": "<sha256 сирої відповіді LLM>",
+                    "language": "uk"|"en"|"neutral",
+                    "languageSource": "explicit"|"auto"} ],
+      "summary": {…, "byLanguage": {"uk": {…}, "en": {…}, "neutral": {…}}}
+    }
+  },
+  "seedGroups": {…},          // лише tests.run: розкид pass rate по seed-ах
+  "axisComparison": […],      // лише tests.run: побайтовий збіг виводу між парами
+  "axisImpact": {…},          //               режимів, що різняться однією віссю
+  "languageBreakdown": {…}    // обидва тести: мовна розбивка
+}
+```
+
+* `seedGroups["<режим без seed>"].passRate` = `{values, mean, min, max, stdev, spread}`.
+  σ — популяційне: у звіті лежать УСІ прогони групи, а не вибірка з них.
+* `axisComparison[i]` = `{axis, from, to, fromValue, toValue, cases, identical,
+  differing, identicalPct}`. `identical === cases` означає, що вісь не змінила
+  побайтово нічого — це сильніший доказ інертності, ніж однаковий pass rate.
+* **Мовна розбивка.** Корпус документації україномовний, а частина запитів —
+  англійська, тож pass rate рахується ще й окремо по мовах. Мов ТРИ:
+  `uk`, `en` і `neutral` — назви брендів («Photoshop»), безглуздя
+  («asdfasdf qwerty», «івапівпавіп») і символьні токени («pdf»), які не
+  належать жодній мові й не потрапляють ні в українську, ні в англійську
+  метрику. Мова задана ЯВНО полем `language` у `tests/test-cases.js` і в трьох
+  `dataset_*.json`; автовизначення (`franc-min`) — лише запобіжник для нових
+  кейсів без поля, і такий кейс має `languageSource: "auto"`, а їхню кількість
+  звіт показує в `languageBreakdown.guessedCases`.
+* `summary.byLanguage.<мова>` = `{cases, passed, failed, guessed, passRate}`;
+  `passRate: null` означає «мови в наборі немає», а не 0%.
+* `languageBreakdown` = `{guessedCases, totals, byMode, bySearchAxis, gap}`.
+  `byMode["<режим>"].gap` — розрив `uk − en` у процентних пунктах;
+  `bySearchAxis` відповідає на питання, чи залежить розрив від режиму пошуку;
+  `gap.stable` = розкид розриву між режимами не більший за 5 п.п.
+* `tests.runExternal` віддає ті самі поля заголовка, той самий `params`,
+  `byLanguage` і `languageBreakdown`, але без осьового хвоста
+  (`seedGroups` / `axisComparison`): у нього один режим.
+  Обидва тести формують звіт ОДНИМ записувачем (`tests/report-stream.js`),
+  тож порядок ключів у файлі й у таблиці збігається.
+
+Наслідки потокового запису:
 
 * обірваний прогін лишає на диску `*.json.partial` з усім, що встигло дорахуватись;
 * `reports.list` і `reports.read` таких файлів **не бачать** (фільтр `.json`),

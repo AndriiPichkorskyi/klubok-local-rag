@@ -35,6 +35,14 @@ export const adapter = {
   async launchApp() {
     return notImplemented("launchApp");
   },
+
+  async getImageSize() {
+    return notImplemented("getImageSize");
+  },
+
+  async resizeImage() {
+    return notImplemented("resizeImage");
+  },
 };
 
 export default adapter;

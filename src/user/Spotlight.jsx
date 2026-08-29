@@ -199,6 +199,7 @@ export default function Spotlight() {
         {phase === "done" ? (
           <ResultView
             answer={answer}
+            askedText={askedText}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             stepsOpen={stepsOpen}

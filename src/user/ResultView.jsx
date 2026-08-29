@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef } from "react";
 import Markdown from "./markdown";
+import WalkthroughLauncher from "../walkthrough/WalkthroughLauncher";
 
 /** Довгу статтю згортаємо, щоб рекомендація не тонула в тексті. */
 const CLAMP_CHARS = 900;
@@ -20,7 +21,7 @@ function useScrollIntoView(isSelected) {
 }
 
 /** Головна рекомендація: назва програми, чому саме вона, кроки з довідки. */
-function MainCard({ answer, selected, onSelect, stepsOpen, onToggleSteps }) {
+function MainCard({ answer, selected, onSelect, stepsOpen, onToggleSteps, askedText }) {
   const ref = useScrollIntoView(selected);
   const longSteps = answer.steps.length > CLAMP_CHARS;
   const clamped = longSteps && !stepsOpen;
@@ -54,6 +55,17 @@ function MainCard({ answer, selected, onSelect, stepsOpen, onToggleSteps }) {
           ) : null}
         </div>
       ) : null}
+
+      {/* Вхід у модуль 2.5: читати статтю і робити те саме в чужому інтерфейсі —
+          різні речі, тому запуск підказки стоїть одразу під статтею.
+          Клік по кнопці не має рахуватись вибором картки. */}
+      <div onClick={(event) => event.stopPropagation()}>
+        <WalkthroughLauncher
+          appName={answer.appName}
+          docTitle={answer.docTitle}
+          askedText={askedText}
+        />
+      </div>
     </article>
   );
 }
@@ -140,6 +152,9 @@ export default function ResultView({
   openAlts,
   onToggleAlt,
   onAskAbout,
+  // Текст запиту людини. Spotlight його поки не передає — тоді метою сесії
+  // стає назва знайденої статті (див. buildGoal у WalkthroughLauncher).
+  askedText = "",
 }) {
   if (!answer) return null;
 
@@ -166,6 +181,7 @@ export default function ResultView({
         onSelect={() => onSelect(0)}
         stepsOpen={stepsOpen}
         onToggleSteps={onToggleSteps}
+        askedText={askedText}
       />
 
       {answer.alternatives.length > 0 ? (

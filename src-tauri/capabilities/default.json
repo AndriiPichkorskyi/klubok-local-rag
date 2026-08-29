@@ -1,8 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and walkthrough overlay windows",
+  "windows": [
+    "main",
+    "walkthrough-hint",
+    "walkthrough-highlight"
+  ],
   "permissions": [
     "core:default",
     "opener:default"

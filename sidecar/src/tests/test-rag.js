@@ -10,6 +10,21 @@ import { db } from "../services/db.service.js";
 import { renderReportTable } from "../cli/reports.js";
 import { logger } from "../services/logger.service.js";
 import { createReportStream } from "./report-stream.js";
+import {
+  resolveAxes,
+  buildModes,
+  describeMatrix,
+  summarizeSeedGroups,
+  compareAxisPairs,
+  summarizeAxisImpact,
+} from "./benchmark-matrix.js";
+import {
+  resolveCaseLanguage,
+  createLanguageTally,
+  summarizeLanguages,
+  LANGUAGE_LABELS,
+} from "./language.js";
+import { createHash } from "crypto";
 
 /**
  * RAG-бенчмарк по всіх комбінаціях режимів.
@@ -61,28 +76,69 @@ export async function runRagTests(onProgress = () => {}) {
     searchMode: config.rag.searchMode,
     enableXmlTags: config.rag.enableXmlTags,
     enableContextReordering: config.rag.enableContextReordering,
+    systemPromptMode: config.rag.systemPromptMode,
+    seed: config.rag.seed,
+    temperature: config.rag.temperature,
   };
   try {
-    const searchModes = ["vector", "fts", "hybrid"];
-    const xmlModes = [false, true];
-    const reorderModes = [false, true];
+    // Матриця більше не зашита в код: осі беруться з config/pipeline.config.json
+    // (rag.benchmark.axes). Типові значення дають ті самі 12 режимів, що й раніше.
+    const benchmarkConfig = config.rag.benchmark || {};
+    const axes = resolveAxes(benchmarkConfig);
+    const modes = buildModes(axes, {
+      temperature: config.rag.temperature ?? 0.1,
+      chatModel: config.ollama.chatModel,
+      embedModel: config.embedModelName,
+    });
 
-    const modes = [];
-    for (const search of searchModes) {
-      for (const xml of xmlModes) {
-        for (const reorder of reorderModes) {
-          const name = `${search}${xml ? "+XML" : ""}${reorder ? "+Reorder" : ""}`;
-          modes.push({ name, search, xml, reorder });
-        }
-      }
+    // Запобіжник: повний добуток усіх осей — 36N режимів по 26 кейсів, і
+    // запустити таке випадково коштує людині ночі. maxModes = 0 — без обмеження.
+    const maxModes = Number(benchmarkConfig.maxModes) || 0;
+    if (maxModes > 0 && modes.length > maxModes) {
+      throw new Error(
+        `Матриця дає ${modes.length} режимів, а rag.benchmark.maxModes = ${maxModes}. ` +
+          `Звузьте осі в config/pipeline.config.json або підніміть maxModes.`,
+      );
     }
 
-    console.log(pc.bgCyan(pc.black(` (${modes.length} РЕЖИМІВ ТЕСТУВАННЯ) `)));
-    const summary = {};
-
     // Прогрес рахуємо наскрізно по всіх режимах: панель показує один індикатор.
-    const totalRuns = modes.length * TEST_CASES.length;
+    const { lines: matrixLines, totalRuns } = describeMatrix(axes, modes, TEST_CASES.length);
     let doneRuns = 0;
+
+    // Масштаб прогону — на екран і в прогрес ДО першого запиту до LLM.
+    console.log(pc.bgCyan(pc.black(` (${modes.length} РЕЖИМІВ ТЕСТУВАННЯ) `)));
+    matrixLines.forEach((line) => console.log(pc.cyan(line)));
+    onProgress(`Старт: ${modes.length} режимів × ${TEST_CASES.length} кейсів = ${totalRuns} прогонів LLM.`, 0);
+    logger.event("info", "test.matrix", { axes, modes: modes.length, totalRuns }, matrixLines.join(" "));
+
+    // Мова кожного кейса визначається ОДИН раз до прогону, а не на кожному
+    // режимі: значення однакове для всіх режимів, а лічильник «вгаданих»
+    // інакше множився б на кількість режимів.
+    const caseLanguage = new Map();
+    let guessedLanguageCases = 0;
+    const languageCensus = {};
+    for (const test of TEST_CASES) {
+      const resolved = resolveCaseLanguage(test);
+      caseLanguage.set(test, resolved);
+      if (resolved.languageSource === "auto") guessedLanguageCases += 1;
+      languageCensus[resolved.language] = (languageCensus[resolved.language] || 0) + 1;
+    }
+    console.log(
+      pc.cyan(
+        "Мови набору: " +
+          Object.entries(languageCensus)
+            .map(([lang, count]) => `${LANGUAGE_LABELS[lang] || lang} — ${count}`)
+            .join(", ") +
+          (guessedLanguageCases > 0
+            ? ` (з них ${guessedLanguageCases} визначено автоматично)`
+            : " (усі задані явно)"),
+      ),
+    );
+
+    const summary = {};
+    // Хеші сирих відповідей LLM: режим → (запит → hash). Потрібні, щоб
+    // довести інертність осі побайтовим збігом, а не статистикою.
+    const hashesByMode = new Map();
 
     // Звіт пишемо на диск ПОСТУПОВО. Раніше всі 12 режимів × усі кейси
     // лежали в пам'яті до останнього рядка, і лише потім JSON.stringify
@@ -99,10 +155,18 @@ export async function runRagTests(onProgress = () => {}) {
         embed: config.embedModelName,
         chat: config.ollama.chatModel,
       },
+      // Нове у звіті: матриця, якою його отримано, і очікуваний масштаб.
+      benchmarkKind: "rag",
+      axes,
+      modeCount: modes.length,
+      expectedRuns: totalRuns,
+      defaults: {
+        enableJsonFormat: config.rag.enableJsonFormat,
+        topK: config.rag.topK,
+        excludeLocalDocs: config.rag.excludeLocalDocs,
+      },
     };
     report = createReportStream(reportPath, reportHeader);
-    // Для таблиці в терміналі потрібні лише підсумки режимів, не результати.
-    const reportSummary = { ...reportHeader, modes: {} };
 
     for (const modeObj of modes) {
       const mode = modeObj.name;
@@ -120,12 +184,22 @@ export async function runRagTests(onProgress = () => {}) {
         doneRuns,
         totalRuns,
       });
-      await report.beginMode(mode);
+      await report.beginMode(mode, modeObj.params);
 
-      // Перевизначаємо конфіг в пам'яті для поточного режиму
+      // Перевизначаємо конфіг в пам'яті для поточного режиму.
+      // Усі кейси режиму йдуть з однаковими осями, тож паралельність (p-limit)
+      // не бачить чужих значень.
       config.rag.searchMode = modeObj.search;
       config.rag.enableXmlTags = modeObj.xml;
       config.rag.enableContextReordering = modeObj.reorder;
+      config.rag.systemPromptMode = modeObj.systemPrompt;
+      config.rag.seed = modeObj.seed;
+      config.rag.temperature = modeObj.params.temperature;
+
+      const modeHashes = new Map();
+      hashesByMode.set(mode, modeHashes);
+      // Розбивка pass rate по мовах для цього режиму.
+      const langTally = createLanguageTally();
 
       let passed = 0;
       let failed = 0;
@@ -252,8 +326,23 @@ export async function runRagTests(onProgress = () => {}) {
             failed++;
           }
 
+          // Побайтовий відбиток відповіді моделі. Два режими з однаковим
+          // хешем на всіх кейсах = вісь між ними не змінила НІЧОГО.
+          const rawOutputHash =
+            typeof rawLlmOutput === "string"
+              ? createHash("sha256").update(rawLlmOutput).digest("hex")
+              : null;
+          modeHashes.set(test.query, rawOutputHash);
+
+          // Мова запиту — і в лічильник режиму, і в сам результат, щоб
+          // таблицю звітів можна було сортувати за нею.
+          const { language, languageSource } = caseLanguage.get(test);
+          langTally.add(language, isSuccess || isAlternativeSuccess, languageSource === "auto");
+
           const resObj = {
             query: test.query,
+            language,
+            languageSource,
             expectedType: test.type,
             expectedApp: test.expectedApp,
             isSuccess: isSuccess || isAlternativeSuccess,
@@ -268,6 +357,7 @@ export async function runRagTests(onProgress = () => {}) {
             memoryUsageMB: memUsageMB,
             llmResponse: response,
             rawLlmOutput: rawLlmOutput,
+            rawOutputHash,
             retrievalStats,
           };
 
@@ -313,9 +403,9 @@ export async function runRagTests(onProgress = () => {}) {
         avgMem: acc.memSum / divisor,
         totalInputTokens: acc.inputTokens,
         totalOutputTokens: acc.outputTokens,
+        byLanguage: langTally.snapshot(),
       };
       await report.endMode(summary[mode]);
-      reportSummary.modes[mode] = { summary: summary[mode] };
       logger.event(
         "info",
         "test.mode.done",
@@ -328,11 +418,102 @@ export async function runRagTests(onProgress = () => {}) {
     // з кореня проєкта, і звіт лягав повз ту теку, яку читає RPC-метод
     // reports.list. Тут лише дописуємо хвіст і знімаємо суфікс .partial —
     // самі результати вже на диску.
-    await report.close();
+    // === Розкид по seed-ах ===
+    // Без нього «XML не впливає» не відрізнити від «одному зразку не пощастило»:
+    // на кожен режим припадає рівно стільки зразків, скільки seed-ів у осі.
+    const seedGroups = summarizeSeedGroups(modes, summary);
 
-    // Вивід таблиці порівняння через спільний рендерер
-    renderReportTable(reportSummary);
-    console.log(`📁 Детальний звіт збережено у: ${reportPath}\n`);
+    // === Доказ інертності осі: побайтовий збіг виводу LLM ===
+    const axisComparison = compareAxisPairs(modes, hashesByMode);
+    const axisImpact = summarizeAxisImpact(axisComparison);
+
+    // === Розбивка за мовою запиту ===
+    // Документація в базі україномовна, тож англійські запити — окремий
+    // (крослінгвальний) результат, а не шум у загальному числі.
+    const languageBreakdown = summarizeLanguages(modes, summary, guessedLanguageCases);
+
+    const footer = { seedGroups, axisComparison, axisImpact, languageBreakdown };
+    await report.close(footer);
+
+    // Вивід таблиці порівняння через спільний рендерер.
+    // Той самий об'єкт, що й у test-external.js — його віддає сам потік звіту.
+    renderReportTable(report.summaryView(footer));
+
+    // Таблиця розкиду друкується лише тоді, коли seed-ів справді кілька:
+    // на одному зразку min = max = mean, і рядок був би шумом.
+    const multiSeedGroups = Object.entries(seedGroups).filter(([, g]) => g.runs > 1);
+    if (multiSeedGroups.length > 0) {
+      console.log(pc.bold(`\n📈 РОЗКИД PASS RATE ПО SEED-АХ (${axes.seed.length} прогони на режим):`));
+      console.log("-".repeat(101));
+      console.log(
+        pc.bold("Режим".padEnd(32)) +
+          pc.bold("Прогонів".padEnd(10)) +
+          pc.bold("Середнє".padEnd(10)) +
+          pc.bold("Мін".padEnd(8)) +
+          pc.bold("Макс".padEnd(8)) +
+          pc.bold("σ".padEnd(8)) +
+          pc.bold("Значення"),
+      );
+      for (const [name, group] of multiSeedGroups) {
+        const r = group.passRate;
+        console.log(
+          name.padEnd(32) +
+            String(group.runs).padEnd(10) +
+            `${r.mean.toFixed(1)}%`.padEnd(10) +
+            `${r.min}%`.padEnd(8) +
+            `${r.max}%`.padEnd(8) +
+            r.stdev.toFixed(2).padEnd(8) +
+            r.values.map((v) => `${v}%`).join(", "),
+        );
+      }
+      console.log("-".repeat(101));
+    }
+
+    // Зведення по осях: скільки кейсів дали ПОБАЙТОВО однаковий вивід між
+    // режимами, що відрізняються рівно цією віссю.
+    if (axisComparison.length > 0) {
+      console.log(pc.bold(`\n🧬 ІДЕНТИЧНІСТЬ ВИВОДУ LLM ПО ОСЯХ (порівнянних пар: ${axisComparison.length}):`));
+      console.log("-".repeat(101));
+      console.log(
+        pc.bold("Вісь".padEnd(16)) +
+          pc.bold("Пар".padEnd(8)) +
+          pc.bold("Кейсів".padEnd(10)) +
+          pc.bold("Ідентичних".padEnd(14)) +
+          pc.bold("Висновок"),
+      );
+      for (const [axis, stat] of Object.entries(axisImpact)) {
+        const verdict = stat.inert
+          ? pc.red("вісь ІНЕРТНА: вивід збігся побайтово скрізь")
+          : `вісь впливає: ${stat.cases - stat.identical} кейсів відрізняються`;
+        console.log(
+          axis.padEnd(16) +
+            String(stat.pairs).padEnd(8) +
+            String(stat.cases).padEnd(10) +
+            `${stat.identical} (${stat.identicalPct}%)`.padEnd(14) +
+            verdict,
+        );
+      }
+      console.log("-".repeat(101));
+      // Окремо — пари з повним збігом: саме вони закривають питання остаточно.
+      const fullyIdentical = axisComparison.filter((p) => p.identical === p.cases);
+      for (const pair of fullyIdentical) {
+        console.log(
+          pc.gray(
+            `   ${pair.from} ≡ ${pair.to} — ${pair.identical}/${pair.cases} кейсів побайтово однакові (вісь ${pair.axis})`,
+          ),
+        );
+      }
+      logger.event(
+        "info",
+        "test.axis.impact",
+        { axisImpact },
+        `Порівняння осей: ${Object.entries(axisImpact)
+          .map(([a, st]) => `${a} ${st.identicalPct}% ідентичних`)
+          .join(", ")}`,
+      );
+    }
+
+    console.log(`\n📁 Детальний звіт збережено у: ${reportPath}\n`);
 
     const modeSummaries = Object.values(summary);
     const passed = modeSummaries.reduce((acc, s) => acc + s.passed, 0);

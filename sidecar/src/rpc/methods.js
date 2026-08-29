@@ -26,6 +26,7 @@ import {
   runVectorize,
   runVectorizeIntents,
 } from "../modules/indexer/pipeline.js";
+import * as walkthrough from "../modules/walkthrough/index.js";
 import { runRagTests } from "../tests/test-rag.js";
 import { runExternalTests } from "../tests/test-external.js";
 
@@ -430,6 +431,42 @@ export const methods = {
     } catch (error) {
       throw new Error(`Звіт «${name}» містить невалідний JSON: ${error.message}`);
     }
+  },
+
+  /**
+   * Модуль 2.5 (walkthrough). Чотири методи описано в
+   * docs/contracts/walkthrough.md; уся логіка — в modules/walkthrough.
+   * Тут, як і всюди в цьому файлі, лише прокидання params і ctx.
+   */
+  async "walkthrough.start"(params = {}, ctx) {
+    return await walkthrough.start(params, {
+      signal: ctx.signal,
+      onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
+    });
+  },
+
+  /**
+   * Наступний крок за знімком екрана. Виклик зору довгий, тому ctx.signal
+   * доходить до axios: job.cancel обриває саме його.
+   */
+  async "walkthrough.step"(params = {}, ctx) {
+    return await walkthrough.step(params, {
+      signal: ctx.signal,
+      onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
+    });
+  },
+
+  /** Повторний аналіз того самого екрана іншим промптом. */
+  async "walkthrough.stuck"(params = {}, ctx) {
+    return await walkthrough.stuck(params, {
+      signal: ctx.signal,
+      onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
+    });
+  },
+
+  /** Закриття сесії: звільняє пам'ять і видаляє знімки екрана. */
+  async "walkthrough.finish"(params = {}) {
+    return await walkthrough.finish(params);
   },
 
   /**

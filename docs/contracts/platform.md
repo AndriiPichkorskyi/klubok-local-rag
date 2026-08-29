@@ -21,6 +21,8 @@
 | `scanApplications(onProgress)` | `Promise<App[]>` | встановлені програми; macOS делегує в `modules/indexer/scanner.js` |
 | `findLocalDocs(app)` | `Promise<string[]>` | абсолютні шляхи до html-файлів довідки програми; немає довідки — `[]` |
 | `launchApp(identifier)` | `Promise<{launched, identifier}>` | запуск за bundleId або шляхом (потрібно модулю walkthrough) |
+| `getImageSize(file)` | `Promise<{width, height}>` | розмір зображення в пікселях |
+| `resizeImage(file, {maxWidth, destination})` | `Promise<{path, width, height, originalWidth, originalHeight, resized}>` | зменшення знімка перед надсиланням у vision-модель |
 
 `App` — те, що вже віддає `scanner.js`:
 `{ name, bundleId, path, helpBookFolder, hpdProjectIdentifier }`.
@@ -36,3 +38,7 @@
 3. Невідома платформа не є аварією: `getPlatformAdapter()` віддає адаптер із
    `supported: false`, а не кидає виняток.
 4. Адаптер не містить власної логіки сканування — він обгортає наявний код ОС.
+5. Робота із зображеннями — теж знання про ОС, тому живе тут, а не в модулі
+   walkthrough. macOS обходиться вбудованою `sips`; нативної бібліотеки
+   (sharp тощо) проєкт свідомо не тягне. Зображення, вужче за `maxWidth`,
+   не чіпається: повертається оригінал із `resized: false`.

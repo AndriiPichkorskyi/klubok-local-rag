@@ -2,7 +2,8 @@
  * Файл: src/platform/macos.js
  * Опис: Адаптер платформи macOS. Тонка обгортка над наявним кодом:
  *       сканування програм делегується в modules/indexer/scanner.js,
- *       запуск програми — системній утиліті `open`.
+ *       запуск програми — системній утиліті `open`,
+ *       робота із зображеннями — вбудованій `sips`.
  *       Власної логіки сканування тут немає і бути не повинно.
  */
 
@@ -79,6 +80,26 @@ async function collectDocFiles(dir) {
   }
 }
 
+/**
+ * Читає розмір зображення в пікселях через `sips -g`. Формат виводу:
+ *   /path/to/file.png
+ *     pixelWidth: 2880
+ *     pixelHeight: 1864
+ * @param {string} file
+ * @returns {Promise<{width: number, height: number}>}
+ */
+async function sipsImageSize(file) {
+  const { stdout } = await execFileAsync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", file]);
+  const width = Number(stdout.match(/pixelWidth:\s*(\d+)/)?.[1]);
+  const height = Number(stdout.match(/pixelHeight:\s*(\d+)/)?.[1]);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    throw new Error(
+      `Не вдалося прочитати розмір зображення «${file}»: sips віддав «${stdout.trim()}».`,
+    );
+  }
+  return { width, height };
+}
+
 export const adapter = {
   platform: "darwin",
   name: "macOS",
@@ -130,6 +151,74 @@ export const adapter = {
     } catch (error) {
       throw new Error(`Не вдалося запустити «${identifier}»: ${error.message}`);
     }
+  },
+
+  /**
+   * Розмір зображення в пікселях.
+   * @param {string} file - абсолютний шлях до зображення
+   * @returns {Promise<{width: number, height: number}>}
+   */
+  async getImageSize(file) {
+    if (!file || typeof file !== "string") {
+      throw new Error("getImageSize: не вказано шлях до зображення.");
+    }
+    return await sipsImageSize(file);
+  },
+
+  /**
+   * Зменшує зображення до заданої ширини. Потрібно модулю walkthrough:
+   * повнорозмірний Retina-кадр у промпті — це десятки тисяч токенів.
+   *
+   * Нативної бібліотеки (sharp тощо) свідомо НЕ тягнемо: у macOS для цього є
+   * вбудована `sips`, і знання про неї — місце саме адаптера платформи.
+   * Пропорції `sips --resampleWidth` зберігає сама.
+   *
+   * Зображення, вужче за maxWidth, не чіпаємо: віддаємо оригінал із
+   * `resized: false`, щоб не витрачати час і не втрачати якість.
+   *
+   * @param {string} source - шлях до вихідного зображення
+   * @param {{maxWidth: number, destination: string}} options
+   * @returns {Promise<{path: string, width: number, height: number,
+   *                    originalWidth: number, originalHeight: number, resized: boolean}>}
+   */
+  async resizeImage(source, { maxWidth, destination } = {}) {
+    if (!source || typeof source !== "string") {
+      throw new Error("resizeImage: не вказано шлях до вихідного зображення.");
+    }
+    if (!Number.isFinite(Number(maxWidth)) || Number(maxWidth) <= 0) {
+      throw new Error(`resizeImage: некоректна максимальна ширина «${maxWidth}».`);
+    }
+    const original = await sipsImageSize(source);
+    if (original.width <= Number(maxWidth)) {
+      return {
+        path: source,
+        width: original.width,
+        height: original.height,
+        originalWidth: original.width,
+        originalHeight: original.height,
+        resized: false,
+      };
+    }
+    if (!destination || typeof destination !== "string") {
+      throw new Error("resizeImage: не вказано шлях, куди писати зменшену копію.");
+    }
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    await execFileAsync("sips", [
+      "--resampleWidth",
+      String(Math.round(maxWidth)),
+      source,
+      "--out",
+      destination,
+    ]);
+    const sent = await sipsImageSize(destination);
+    return {
+      path: destination,
+      width: sent.width,
+      height: sent.height,
+      originalWidth: original.width,
+      originalHeight: original.height,
+      resized: true,
+    };
   },
 };
 

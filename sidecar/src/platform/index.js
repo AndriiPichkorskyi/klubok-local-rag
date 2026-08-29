@@ -38,6 +38,8 @@ function createUnknownAdapter(platform) {
     scanApplications: async () => notImplemented("scanApplications"),
     findLocalDocs: async () => notImplemented("findLocalDocs"),
     launchApp: async () => notImplemented("launchApp"),
+    getImageSize: async () => notImplemented("getImageSize"),
+    resizeImage: async () => notImplemented("resizeImage"),
   };
 }
 

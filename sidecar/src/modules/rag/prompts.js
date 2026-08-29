@@ -2,9 +2,57 @@
  * Файл: src/modules/rag/prompts.js
  * Опис: Зберігає шаблони промптів для LLM. Винесення промптів у окремий файл
  *       є найкращою практикою (Best Practice) для чистішої архітектури.
+ *
+ * Тут же живе ВІСЬ СИСТЕМНОГО ПРОМПТА (`systemPromptMode`). Раніше системний
+ * текст був захардкоджений в ollama.service.js і надсилався завжди, тож осі
+ * `xml`/`reorder` змагалися з інструкцією, яка вже все за них сказала
+ * («output STRICTLY valid JSON», «base your decision EXCLUSIVELY on the Context»).
+ * Тепер текст лежить в одному місці, а спосіб його доставки — параметр:
+ *
+ *   system — текст іде в поле `system` запиту до Ollama (поточна поведінка);
+ *   inline — той самий текст стає початком основного промпта, поле `system`
+ *            не надсилається взагалі (перевіряємо, чи важливий КАНАЛ);
+ *   none   — системного тексту немає ніде (перевіряємо, чи важливий САМ ТЕКСТ).
  */
 
-export function generatePrompt(contextText, queryText, enableXmlTags, enableJsonFormat = false) {
+/** Дозволені значення осі системного промпта. */
+export const SYSTEM_PROMPT_MODES = ["system", "inline", "none"];
+
+/**
+ * Системний текст класифікатора. Дослівно той, що був захардкоджений
+ * у `ollama.service.js`; винесений сюди, щоб режим `inline` міг покласти
+ * його в основний промпт, а режим `none` — не використати ніде.
+ */
+export const CLASSIFIER_SYSTEM_PROMPT =
+  "You are a highly analytical classification engine. Your task is to output STRICTLY valid JSON based on the schema provided. Base your decision EXCLUSIVELY on the Context provided. Do not invent any information.";
+
+/**
+ * Формує основний промпт і (за потреби) системне повідомлення.
+ *
+ * @param {string} contextText - Готовий текст контексту (DOCUMENT 1..N).
+ * @param {string} queryText - Запит користувача.
+ * @param {boolean} enableXmlTags - Вісь `xml`: структурувати промпт XML-тегами.
+ * @param {boolean} enableJsonFormat - Вимагати від моделі строгий JSON.
+ * @param {string} systemPromptMode - Вісь `systemPrompt`: "system" | "inline" | "none".
+ * @returns {{prompt: string, systemPrompt: string|null}}
+ *          `systemPrompt` не null ЛИШЕ для режиму "system"; в інших випадках
+ *          поле `system` до Ollama не надсилається.
+ */
+export function generatePrompt(
+  contextText,
+  queryText,
+  enableXmlTags,
+  enableJsonFormat = false,
+  systemPromptMode = "system",
+) {
+  // Значення поза списком — помилка виклику, а не тихий фолбек: друкарська
+  // помилка в конфізі не має мовчки повертати прогін до старої поведінки.
+  if (!SYSTEM_PROMPT_MODES.includes(systemPromptMode)) {
+    throw new Error(
+      `Невідомий systemPromptMode «${systemPromptMode}». Дозволені: ${SYSTEM_PROMPT_MODES.join(", ")}.`,
+    );
+  }
+
   const systemRole =
     "You are an intelligent macOS assistant. Your task is to recommend a locally installed app to the user based on their query.";
 
@@ -32,9 +80,10 @@ Your response must strictly follow this JSON schema:
 
   const rules = enableJsonFormat ? rulesJson : rulesText;
 
+  let body;
   if (enableXmlTags) {
     // Структурування за допомогою XML-тегів (допомагає моделям краще розмежовувати дані)
-    return `${systemRole}
+    body = `${systemRole}
 
 <context>
 ${contextText}
@@ -49,7 +98,7 @@ ${queryText}
 </user_query>`;
   } else {
     // Звичайне текстове структурування (з правилами в кінці для Recency Bias)
-    return `${systemRole}
+    body = `${systemRole}
 
 Context (Local Apps and their capabilities):
 ${contextText}
@@ -60,4 +109,21 @@ ${rules}
 User Query: ${queryText}
 `;
   }
+
+  // Системний текст існує лише в JSON-режимі — рівно як було в
+  // ollama.service.js до появи осі. У текстовому режимі всі три значення
+  // осі збігаються, і це чесно видно зі звіту.
+  const systemText = enableJsonFormat ? CLASSIFIER_SYSTEM_PROMPT : null;
+
+  if (systemPromptMode === "inline" && systemText) {
+    // Той самий текст, той самий порядок (Ollama теж кладе system зверху),
+    // але вже всередині основного промпта.
+    return { prompt: `${systemText}\n\n${body}`, systemPrompt: null };
+  }
+
+  if (systemPromptMode === "none") {
+    return { prompt: body, systemPrompt: null };
+  }
+
+  return { prompt: body, systemPrompt: systemText };
 }

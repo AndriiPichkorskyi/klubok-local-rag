@@ -918,7 +918,7 @@
   },
   {
     "id": "intent-doc-en-pdf-001",
-    "language": "en",
+    "language": "neutral",
     "query": "pdf",
     "capabilityId": "pdf.merge",
     "acceptableApplicationIdentifiers": ["com.apple.Preview"]

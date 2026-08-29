@@ -2067,6 +2067,8 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 name = "local-tool-rag-assistant"
 version = "0.1.0"
 dependencies = [
+ "core-foundation",
+ "core-graphics",
  "futures-util",
  "serde",
  "serde_json",

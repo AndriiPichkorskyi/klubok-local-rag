@@ -7,6 +7,7 @@
 import axios from "axios";
 import readline from "readline";
 import { config } from "../config/config.js";
+import { CLASSIFIER_SYSTEM_PROMPT } from "../modules/rag/prompts.js";
 
 /** Скільки чекаємо на відповідь Ollama під час перевірки живості. */
 const TAGS_TIMEOUT_MS = 5000;
@@ -49,6 +50,28 @@ export function resolveModelLists() {
   return { required, optional };
 }
 
+/**
+ * Витягує справжню причину відмови Ollama. Axios ховає її за загальним
+ * «Request failed with status code 400», а Ollama завжди пише пояснення
+ * у тілі відповіді — без нього діагностувати неможливо.
+ */
+function describeOllamaError(error, context) {
+  const body = error?.response?.data;
+  const reason =
+    (typeof body === "string" && body) ||
+    body?.error ||
+    body?.message ||
+    error?.message ||
+    "невідома помилка";
+  const status = error?.response?.status;
+  const prefix = status ? `Ollama відповіла ${status}` : "Ollama недоступна";
+  const enriched = new Error(`${prefix} (${context}): ${reason}`);
+  enriched.status = status;
+  enriched.ollamaError = reason;
+  enriched.cause = error;
+  return enriched;
+}
+
 class OllamaService {
   // Читаємо конфіг щоразу, а не копіюємо в конструкторі: інакше `config.reload`
   // (RPC-метод config.reload) не впливав би на вже створений сервіс.
@@ -60,6 +83,9 @@ class OllamaService {
   }
   get embedModel() {
     return config.ollama.embedModel;
+  }
+  get visionModel() {
+    return config.ollama.visionModel;
   }
 
   /**
@@ -135,43 +161,199 @@ class OllamaService {
 
   /**
    * Відправляє промпт до LLM та отримує згенеровану текстову відповідь.
+   *
+   * Ані seed, ані temperature більше не захардкоджені: обидва — параметри
+   * експерименту. Раніше `seed: 42` разом із `temperature: 0.1` давали майже
+   * детермінований вивід, тобто на кожен режим бенчмарку припадав рівно один
+   * зразок і жодного уявлення про розкид.
+   *
    * @param {string} prompt - Текст промпту.
-   * @returns {Promise<string>} - Згенерований текст.
+   * @param {boolean} enableJsonFormat - Вимагати від моделі строгий JSON.
+   * @param {string|null} systemPrompt - Готовий текст системного повідомлення
+   *        (див. generatePrompt). `null` = поле `system` не надсилати.
+   * @param {Object} [options] - Параметри осей експерименту:
+   *        `systemPromptMode` ("system"|"inline"|"none"),
+   *        `seed` (число або `null` = не надсилати seed узагалі),
+   *        `temperature` (число).
+   * @returns {Promise<Object>} - Повна відповідь Ollama (з метриками).
    */
-  async generateChatResponse(prompt, enableJsonFormat = false, systemPrompt = null) {
+  async generateChatResponse(prompt, enableJsonFormat = false, systemPrompt = null, options = {}) {
+    // Пріоритет: явний аргумент виклику > конфіг > історичний дефолт.
+    const seed = options.seed !== undefined ? options.seed : config.rag?.seed;
+    const temperature =
+      options.temperature !== undefined ? options.temperature : config.rag?.temperature;
+
     const payload = {
       model: this.chatModel,
       prompt: prompt,
       stream: false,
       keep_alive: "5m",
       options: {
-        temperature: 0.1,    // Для JSON-парсингу потрібна низька креативність
-        seed: 42,
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.1,
         num_ctx: 4096,
         num_predict: 400,
-      }
+      },
     };
-    
-    // Якщо передано кастомний системний промпт - використовуємо його
+
+    // seed === null означає «прогін без фіксованого зерна»: поле просто не
+    // надсилаємо, і кожен виклик дає свій зразок.
+    if (seed !== null && seed !== undefined && Number.isFinite(Number(seed))) {
+      payload.options.seed = Number(seed);
+    }
+
+    // Якщо передано готовий системний промпт - використовуємо його.
+    // Режими "inline" та "none" осі systemPrompt навмисно НЕ мають фолбеку:
+    // саме відсутність поля `system` вони й перевіряють.
+    const suppressSystem =
+      options.systemPromptMode === "inline" || options.systemPromptMode === "none";
     if (systemPrompt) {
       payload.system = systemPrompt;
-    } else if (enableJsonFormat) {
-      payload.system = "You are a highly analytical classification engine. Your task is to output STRICTLY valid JSON based on the schema provided. Base your decision EXCLUSIVELY on the Context provided. Do not invent any information.";
+    } else if (enableJsonFormat && !suppressSystem) {
+      payload.system = CLASSIFIER_SYSTEM_PROMPT;
     }
-    
+
     if (enableJsonFormat) {
       payload.format = {
         type: "object",
         properties: {
           isMatch: { type: "boolean" },
           reason: { type: "string" },
-          sourceId: { type: "integer" }
+          sourceId: { type: "integer" },
         },
-        required: ["isMatch", "reason"]
+        required: ["isMatch", "reason"],
       };
     }
     const response = await axios.post(`${this.baseUrl}/api/generate`, payload);
     return response.data; // Повертаємо весь об'єкт, щоб мати доступ до метрик (total_duration, eval_count тощо)
+  }
+
+  /**
+   * Запит до vision-моделі: текстовий промпт + зображення в base64.
+   *
+   * Три відмінності від generateChatResponse(), через які це окремий метод:
+   *  1) інша модель (config.ollama.visionModel), і плутати їх не можна;
+   *  2) поле `images` — саме так Ollama приймає картинку в /api/generate;
+   *  3) виклик довгий, тому мусить бути скасовним і мати власний таймаут.
+   *
+   * Скасування зроблено штатним для проєкта способом: AbortSignal з ctx
+   * прокидається в axios (так само, як у scraper.service.js). Скасований
+   * запит кидає CanceledError — RPC-сервер перетворює його на «cancelled».
+   *
+   * `format` — JSON-схема структурованого виводу Ollama. Це заміна власному
+   * парсеру: модель обмежена граматикою і не може віддати щось поза схемою.
+   *
+   * @param {Object} params
+   * @param {string} params.prompt - основний промпт.
+   * @param {string[]} params.images - зображення в base64 (без префікса data:).
+   * @param {string|null} [params.system] - системне повідомлення.
+   * @param {Object|null} [params.format] - JSON-схема відповіді.
+   * @param {AbortSignal|null} [params.signal] - сигнал скасування.
+   * @param {number} [params.timeoutMs] - ліміт очікування відповіді.
+   * @param {number} [params.temperature] - температура (за замовчуванням 0: нам потрібна стабільність).
+   * @param {number} [params.numPredict] - ліміт токенів відповіді.
+   * @param {string} [params.model] - перевизначення моделі (за замовчуванням visionModel).
+   * @returns {Promise<Object>} - повна відповідь Ollama (з метриками).
+   */
+  async generateVisionResponse({
+    prompt,
+    images = [],
+    system = null,
+    format = null,
+    signal = null,
+    timeoutMs = 120000,
+    temperature = 0,
+    numPredict = 400,
+    model = null,
+  }) {
+    if (!prompt) throw new Error("generateVisionResponse: не вказано промпт.");
+    if (!Array.isArray(images) || images.length === 0) {
+      throw new Error("generateVisionResponse: не передано жодного зображення.");
+    }
+
+    const payload = {
+      model: model || this.visionModel,
+      prompt,
+      images,
+      stream: false,
+      keep_alive: "5m",
+      options: {
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
+        num_predict: numPredict,
+      },
+    };
+    if (system) payload.system = system;
+    if (format) payload.format = format;
+
+    try {
+      const response = await axios.post(`${this.baseUrl}/api/generate`, payload, {
+        signal: signal || undefined,
+        timeout: timeoutMs,
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isCancel(error) || error?.name === "CanceledError") throw error;
+      // Опис запиту в повідомленні: без нього незрозуміло, що саме не сподобалось.
+      const shape =
+        `модель ${payload.model}, зображень ${images.length}, ` +
+        `base64 ${images[0] ? images[0].length : 0} символів, ` +
+        `system ${payload.system ? "є" : "немає"}, format ${payload.format ? "схема" : "немає"}`;
+      throw describeOllamaError(error, shape);
+    }
+  }
+
+  /**
+   * Текстовий запит до чат-моделі з довільною JSON-схемою відповіді.
+   * Потрібен режиму `plan` модуля walkthrough: там план кроків готує звичайна
+   * чат-модель, а форму відповіді (масив кроків) задає схема, а не парсер.
+   *
+   * generateChatResponse() для цього не годиться: у ньому схема захардкоджена
+   * під класифікатор RAG (isMatch/reason/sourceId), і чіпати її не можна —
+   * на неї спирається src/user/parseAnswer.js.
+   *
+   * @param {Object} params - {prompt, system, format, signal, timeoutMs, temperature, numPredict, numCtx, seed, model}
+   * @returns {Promise<Object>} - повна відповідь Ollama.
+   */
+  async generateStructuredResponse({
+    prompt,
+    system = null,
+    format = null,
+    signal = null,
+    timeoutMs = 120000,
+    temperature = 0.1,
+    numPredict = 800,
+    numCtx = 8192,
+    seed = undefined,
+    model = null,
+  }) {
+    if (!prompt) throw new Error("generateStructuredResponse: не вказано промпт.");
+
+    const payload = {
+      model: model || this.chatModel,
+      prompt,
+      stream: false,
+      keep_alive: "5m",
+      options: {
+        temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.1,
+        num_ctx: numCtx,
+        num_predict: numPredict,
+      },
+    };
+    const effectiveSeed = seed !== undefined ? seed : config.rag?.seed;
+    if (
+      effectiveSeed !== null &&
+      effectiveSeed !== undefined &&
+      Number.isFinite(Number(effectiveSeed))
+    ) {
+      payload.options.seed = Number(effectiveSeed);
+    }
+    if (system) payload.system = system;
+    if (format) payload.format = format;
+
+    const response = await axios.post(`${this.baseUrl}/api/generate`, payload, {
+      signal: signal || undefined,
+      timeout: timeoutMs,
+    });
+    return response.data;
   }
 
   /**
@@ -196,14 +378,15 @@ ${context}`;
     const response = await axios.post(`${this.baseUrl}/api/generate`, {
       model: this.chatModel,
       prompt: prompt,
-      system: "You are an expert search engine optimizer. Focus on creative, diverse, and natural phrasing.",
+      system:
+        "You are an expert search engine optimizer. Focus on creative, diverse, and natural phrasing.",
       stream: false,
       keep_alive: "5m",
       options: {
         temperature: 0.7, // Вища креативність для генерації синонімів
         num_ctx: 2048,
         num_predict: 200,
-      }
+      },
     });
 
     return response.data.response.trim();

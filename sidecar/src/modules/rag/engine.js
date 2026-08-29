@@ -181,11 +181,30 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
   // Ми винесли логіку формування промптів у окремий файл для кращої архітектури.
   // Тут також реалізовано Constraint Placement (правила в самому кінці)
   // та опціональні XML теги для кращого розпізнавання структури моделлю.
-  const prompt = generatePrompt(contextText, queryText, config.rag.enableXmlTags, config.rag.enableJsonFormat);
+  // Осі `systemPrompt`, `seed` і `temperature` читаються з конфіга так само,
+  // як `enableXmlTags`: бенчмарк підміняє їх у пам'яті на час режиму, а
+  // звичайний шлях користувача бере значення за замовчуванням із конфіга.
+  const systemPromptMode = config.rag.systemPromptMode ?? "system";
+  const { prompt, systemPrompt } = generatePrompt(
+    contextText,
+    queryText,
+    config.rag.enableXmlTags,
+    config.rag.enableJsonFormat,
+    systemPromptMode,
+  );
 
   // 4. Генеруємо відповідь
   onProgress("Генеруємо рекомендацію за допомогою LLM...");
-  const ollamaResult = await ollama.generateChatResponse(prompt, config.rag.enableJsonFormat);
+  const ollamaResult = await ollama.generateChatResponse(
+    prompt,
+    config.rag.enableJsonFormat,
+    systemPrompt,
+    {
+      systemPromptMode,
+      seed: config.rag.seed,
+      temperature: config.rag.temperature,
+    },
+  );
   const rawLlmOutput = ollamaResult.response;
   let responseText = rawLlmOutput;
 

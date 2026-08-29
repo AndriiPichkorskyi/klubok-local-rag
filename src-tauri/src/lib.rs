@@ -1,4 +1,5 @@
 mod sidecar;
+mod system;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,7 +13,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sidecar::rpc_call,
             sidecar::sidecar_restart,
-            sidecar::sidecar_status
+            sidecar::sidecar_status,
+            system::screen_capture,
+            system::launch_app,
+            system::frontmost_app,
+            system::overlay_show,
+            system::overlay_hide,
+            system::overlay_highlight
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
