@@ -67,8 +67,47 @@ export function summarizeResult(result) {
   if (result === undefined || result === null) return "готово";
   if (typeof result === "boolean") return result ? "true" : "false";
   if (typeof result !== "object") return String(result);
-  const parts = Object.entries(result)
-    .filter(([, item]) => item === null || typeof item !== "object")
-    .map(([key, item]) => `${key}=${item}`);
+
+  // Вкладені об'єкти розгортаємо на один рівень. Раніше вони просто відкидались,
+  // і найважливіше поле pipeline.fullSync — perModel, тобто «що сталося з кожною
+  // моделлю» — ніколи не доходило до екрана. Саме через це користувач двічі
+  // не міг зрозуміти, чому друга модель лишилась невекторизованою.
+  const parts = [];
+  for (const [key, item] of Object.entries(result)) {
+    if (item === null || typeof item !== "object") {
+      parts.push(`${key}=${item}`);
+    } else if (Array.isArray(item)) {
+      parts.push(`${key}=${formatArray(item)}`);
+    } else {
+      const inner = Object.entries(item).map(([k, v]) => `${k}: ${formatLeaf(v)}`);
+      parts.push(`${key}={${inner.length === 0 ? "порожньо" : inner.join("; ")}}`);
+    }
+  }
   return parts.length > 0 ? parts.join(", ") : "готово";
+}
+
+/**
+ * Масив у рядок. Масив об'єктів НЕ склеюємо через join: він давав "[object Object]".
+ * Якщо в елементів є впізнавана назва — показуємо перші кілька, інакше лише кількість.
+ */
+function formatArray(items) {
+  if (items.length === 0) return "[порожньо]";
+  if (items.every((item) => item === null || typeof item !== "object")) {
+    return `[${items.join(", ")}]`;
+  }
+  const named = items
+    .map((item) => item?.name ?? item?.id ?? item?.model ?? item?.title)
+    .filter((value) => typeof value === "string");
+  if (named.length === items.length) {
+    const head = named.slice(0, 3).join(", ");
+    return items.length > 3 ? `[${items.length}: ${head}, …]` : `[${head}]`;
+  }
+  return `[${items.length} елементів]`;
+}
+
+/** Значення другого рівня. Глибше не розгортаємо — це рядок статусу, не дамп. */
+function formatLeaf(value) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "object") return Array.isArray(value) ? `[${value.length}]` : "{…}";
+  return String(value);
 }

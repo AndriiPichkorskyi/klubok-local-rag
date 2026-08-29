@@ -27,6 +27,7 @@ dist-ssr
 # УВАГА: src-tauri/icons НЕ ігноруємо — без них Tauri не збереться (272 КБ)
 *lancedb_data*
 *.sqlite
+sidecar/pipeline.lock
 sidecar/data*
 sidecar/test-reports/
 

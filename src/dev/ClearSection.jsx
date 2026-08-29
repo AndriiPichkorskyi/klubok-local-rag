@@ -23,7 +23,7 @@ const TARGETS = [
   { value: "intents", label: "Наміри (ключові слова та їх вектори)" },
 ];
 
-export default function ClearSection({ ops, run }) {
+export default function ClearSection({ ops, run, cancelOp }) {
   const [pending, setPending] = useState(null);
 
   const confirmClear = () => {
@@ -48,6 +48,7 @@ export default function ClearSection({ ops, run }) {
               label={target.label}
               danger
               onClick={() => setPending(target)}
+              onCancel={() => cancelOp?.(key)}
             >
               <div className="dp-op-msg">target: {target.value}</div>
             </OpButton>

@@ -10,43 +10,10 @@
  */
 
 import os from "os";
-import axios from "axios";
 
 import { config } from "../config/config.js";
 import { getPlatformAdapter } from "../platform/index.js";
-import { ollama } from "../services/ollama.service.js";
-
-/** Скільки чекаємо на відповідь Ollama під час перевірки живості. */
-const TAGS_TIMEOUT_MS = 5000;
-
-/**
- * Питає в Ollama список встановлених моделей.
- * Ollama лежить — це не виняток, а звичайний результат перевірки.
- * @returns {Promise<{isAvailable: boolean, models: string[], error: string|null}>}
- */
-async function fetchInstalledModels(baseUrl) {
-  try {
-    const { data } = await axios.get(`${baseUrl}/api/tags`, { timeout: TAGS_TIMEOUT_MS });
-    const models = Array.isArray(data?.models)
-      ? data.models.map((m) => m.name).filter(Boolean)
-      : [];
-    return { isAvailable: true, models, error: null };
-  } catch (error) {
-    return { isAvailable: false, models: [], error: error.message };
-  }
-}
-
-/**
- * Чи встановлена модель. Ollama віддає назви з тегом ("qwen3:1.7b"),
- * а модель без тега в конфізі відповідає тегу ":latest".
- * @param {string} wanted
- * @param {string[]} installed
- */
-function isModelInstalled(wanted, installed) {
-  if (installed.includes(wanted)) return true;
-  if (!wanted.includes(":")) return installed.includes(`${wanted}:latest`);
-  return false;
-}
+import { ollama, isModelInstalled, resolveModelLists } from "../services/ollama.service.js";
 
 /** Моделі зі списку, яких немає серед встановлених. */
 function missingFrom(wantedList, installed) {
@@ -58,9 +25,10 @@ function missingFrom(wantedList, installed) {
  * Ніколи не кидає виняток через недоступну Ollama чи непідтримувану ОС —
  * це нормальні стани, які треба показати користувачу, а не аварія.
  *
+ * @param {Function} onProgress - колбек (msg, pct|null); потрібен лише для autoPull.
  * @returns {Promise<Object>} звіт про готовність
  */
-export async function check() {
+export async function check(onProgress = () => {}) {
   const adapter = getPlatformAdapter();
   const baseUrl = config.ollama.baseUrl;
 
@@ -76,14 +44,31 @@ export async function check() {
   // Директорії питаємо лише в робочого адаптера: заглушка на це чесно відмовляє.
   const scanDirs = platform.supported ? adapter.getScanDirs() : null;
 
-  const ollamaStatus = await fetchInstalledModels(baseUrl);
-  const required = config.bootstrap?.requiredModels || [];
-  const optional = config.bootstrap?.optionalModels || [];
-  const missingRequired = ollamaStatus.isAvailable
-    ? missingFrom(required, ollamaStatus.models)
-    : [...required];
+  // Списки моделей — з одного джерела (див. resolveModelLists), інакше
+  // config.ollama і config.bootstrap.requiredModels мовчки розходяться.
+  const { required, optional } = resolveModelLists();
+
+  let ollamaStatus = await ollama.checkAvailability();
+  let installed = ollamaStatus.installedModels;
+  let missingRequired = ollamaStatus.isAvailable ? missingFrom(required, installed) : [...required];
+
+  // config.bootstrap.autoPull: раніше прапорець не читав ніхто. Тепер він
+  // робить рівно те, що обіцяє його опис у конфізі, — тягне відсутні
+  // обов'язкові моделі. За замовчуванням вимкнений: це гігабайти трафіку.
+  const pulled = [];
+  if (config.bootstrap?.autoPull === true && ollamaStatus.isAvailable && missingRequired.length) {
+    for (const model of missingRequired) {
+      onProgress(`autoPull: завантажуємо модель ${model}...`, null);
+      await ollama.pull(model, onProgress);
+      pulled.push(model);
+    }
+    ollamaStatus = await ollama.checkAvailability();
+    installed = ollamaStatus.installedModels;
+    missingRequired = ollamaStatus.isAvailable ? missingFrom(required, installed) : [...required];
+  }
+
   const missingOptional = ollamaStatus.isAvailable
-    ? missingFrom(optional, ollamaStatus.models)
+    ? missingFrom(optional, installed)
     : [...optional];
 
   const ready = platform.supported && ollamaStatus.isAvailable && missingRequired.length === 0;
@@ -116,9 +101,9 @@ export async function check() {
       baseUrl,
       isAvailable: ollamaStatus.isAvailable,
       error: ollamaStatus.error,
-      installedModels: ollamaStatus.models,
+      installedModels: installed,
     },
-    models: { required, optional, missingRequired, missingOptional },
+    models: { required, optional, missingRequired, missingOptional, autoPulled: pulled },
     ready,
     actions,
     checkedAt: new Date().toISOString(),

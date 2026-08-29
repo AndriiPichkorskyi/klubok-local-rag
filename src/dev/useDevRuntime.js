@@ -9,17 +9,74 @@
  * кожен запуск генерує власний newRef(), передає його третім аргументом у rpc(),
  * і Rust повертає цю мітку в кожній події `sidecar://progress`. Ніяких здогадок
  * за порядком чи за `id` — інакше паралельний запит зі Spotlight крав би прогрес.
+ *
+ * run() ДОДАТКОВО повертає проміс з підсумком {ok, result, error, cancelled}.
+ * Він потрібен послідовному прогону (useFullRun.js), щоб чекати кінця кроку і
+ * не починати наступний. Кнопки, яким підсумок не потрібен, просто його ігнорують.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { onProgress, newRef } from "../ipc";
+import { onProgress, newRef, jobCancel } from "../ipc";
 import { errorText, summarizeResult } from "./format";
 
-/** Скільки рядків журналу тримаємо в пам'яті (векторизація сипле тисячами). */
-const LOG_LIMIT = 500;
+/**
+ * Скільки рядків журналу тримаємо в пам'яті.
+ *
+ * Реальний випадок: під час багатогодинної векторизації дочірній процес слав
+ * ~12 повідомлень на секунду — за ніч це сотні тисяч записів у стані React.
+ * Джерело флуду прибрали з боку бекенда, але панель мусить бути стійкою й сама.
+ */
+const LOG_LIMIT = 2000;
+
+/**
+ * Запас понад ліміт: підрізаємо не на кожному рядку, а раз на LOG_SLACK рядків.
+ * Інакше при дванадцяти повідомленнях на секунду кожне з них коштувало б
+ * повного проходу масивом.
+ */
+const LOG_SLACK = 200;
+
+/**
+ * Рівні, які обрізання НЕ викидає. Сенс обмеження — не втратити те, заради чого
+ * журнал і читають: старт операції, її завершення, скасування і помилку.
+ * Тисячі рядків `progress` між ними цінності не мають — зрізаємо саме їх.
+ */
+const PINNED_LEVELS = new Set(["start", "done", "error", "info"]);
+
+/**
+ * Обрізання журналу. Найстаріші рядки прогресу викидаємо з БУДЬ-ЯКОГО місця
+ * масиву, а не лише з голови: саме так помилка, після якої пройшла тисяча
+ * рядків векторизації, лишається видимою. Якщо самих лише важливих рядків
+ * назбиралось більше за ліміт — зрізаємо найстаріші з них, іншого виходу немає.
+ * Повертає новий масив і кількість зрізаного (її показує журнал, щоб не
+ * вдавати, ніби нічого не було).
+ */
+function trimLog(entries) {
+  if (entries.length <= LOG_LIMIT) return { entries, dropped: 0 };
+
+  let toDrop = entries.length - LOG_LIMIT;
+  const kept = [];
+  for (const entry of entries) {
+    if (toDrop > 0 && !PINNED_LEVELS.has(entry.level)) {
+      toDrop -= 1;
+      continue;
+    }
+    kept.push(entry);
+  }
+
+  const dropped = entries.length - kept.length;
+  if (kept.length <= LOG_LIMIT) return { entries: kept, dropped };
+
+  const extra = kept.length - LOG_LIMIT;
+  return { entries: kept.slice(extra), dropped: dropped + extra };
+}
+
+/** Текст помилки, який видає перерване виконання. Потрібен, щоб відрізнити зупинку від збою. */
+const CANCEL_TEXT = /скасов|зупинен|cancel|abort/i;
 
 export function useDevRuntime() {
   const [ops, setOps] = useState({});
-  const [logEntries, setLogEntries] = useState([]);
+  // Журнал і лічильник зрізаних рядків — один стан: вони змінюються в одному
+  // й тому ж оновленні, і роз'їхатись не повинні.
+  const [log, setLog] = useState({ entries: [], dropped: 0 });
   const [, setTick] = useState(0);
 
   // Синхронне дзеркало ops: перевіряти дубль запуску по стану React пізно —
@@ -31,13 +88,18 @@ export function useDevRuntime() {
   const refToKeyRef = useRef(new Map());
 
   const appendLog = useCallback((entry) => {
-    setLogEntries((prev) => {
-      const next = prev.concat({ seq: (seqRef.current += 1), ts: Date.now(), ...entry });
-      return next.length > LOG_LIMIT ? next.slice(next.length - LOG_LIMIT) : next;
+    // seq і час рахуємо ЗА МЕЖАМИ оновлювача: він має лишатися чистою функцією,
+    // інакше повторний виклик (React у режимі перевірок) зсував би нумерацію.
+    const line = { seq: (seqRef.current += 1), ts: Date.now(), ...entry };
+    setLog((prev) => {
+      const entries = prev.entries.concat(line);
+      if (entries.length <= LOG_LIMIT + LOG_SLACK) return { entries, dropped: prev.dropped };
+      const trimmed = trimLog(entries);
+      return { entries: trimmed.entries, dropped: prev.dropped + trimmed.dropped };
     });
   }, []);
 
-  const clearLog = useCallback(() => setLogEntries([]), []);
+  const clearLog = useCallback(() => setLog({ entries: [], dropped: 0 }), []);
 
   /** Записати рядок у спільний журнал поза контекстом операції. */
   const note = useCallback(
@@ -58,7 +120,9 @@ export function useDevRuntime() {
    */
   const run = useCallback(
     (key, label, fn) => {
-      if (opsRef.current[key]?.running) return;
+      if (opsRef.current[key]?.running) {
+        return Promise.resolve({ ok: false, skipped: true, result: undefined, error: null, cancelled: false });
+      }
 
       const startedAt = Date.now();
       const ref = newRef(key);
@@ -67,6 +131,7 @@ export function useDevRuntime() {
       patchOp(key, {
         label,
         running: true,
+        status: "running",
         startedAt,
         finishedAt: null,
         durationMs: null,
@@ -77,6 +142,12 @@ export function useDevRuntime() {
         ref,
         // Серверний id дізнаємось із першої події прогресу — job.cancel приймає саме його.
         rpcId: null,
+        // Стан зупинки: чи просили, чи підтвердив бекенд, і що він відповів.
+        cancelRequested: false,
+        cancelAck: false,
+        cancelReason: null,
+        cancelling: false,
+        cancelledText: null,
       });
       appendLog({ source: label, text: "старт", level: "start" });
 
@@ -84,6 +155,7 @@ export function useDevRuntime() {
         refToKeyRef.current.delete(ref);
         patchOp(key, {
           running: false,
+          cancelling: false,
           finishedAt: Date.now(),
           durationMs: Date.now() - startedAt,
           pct: null,
@@ -93,15 +165,80 @@ export function useDevRuntime() {
         appendLog({ source: label, text: logText, level });
       };
 
-      Promise.resolve()
+      return Promise.resolve()
         .then(() => fn(ref))
-        .then((result) =>
-          finish({ result, error: null }, `готово · ${summarizeResult(result)}`, "done"),
-        )
+        .then((result) => {
+          // Скасована задача повертається УСПІШНИМ результатом з полем
+          // cancelled:true і тим, що встигло зробитися (sidecar/src/rpc/server.js
+          // і методи pipeline.*). Це не «готово» — і виглядати має інакше.
+          const stopped = Boolean(result && typeof result === "object" && result.cancelled === true);
+          finish(
+            { result, error: null, status: stopped ? "cancelled" : "done" },
+            `${stopped ? "зупинено користувачем" : "готово"} · ${summarizeResult(result)}`,
+            stopped ? "info" : "done",
+          );
+          return { ok: true, result, error: null, cancelled: stopped };
+        })
         .catch((error) => {
           const text = errorText(error);
-          finish({ result: undefined, error: text }, `помилка: ${text}`, "error");
+          const op = opsRef.current[key] || {};
+          // Зупинено користувачем ≠ впало саме. Другим вважаємо лише те, чого
+          // ми не просили: або бекенд підтвердив скасування, або сам так і сказав.
+          const cancelled = Boolean(op.cancelRequested) && (Boolean(op.cancelAck) || CANCEL_TEXT.test(text));
+          finish(
+            cancelled
+              ? { result: undefined, error: null, status: "cancelled", cancelledText: text }
+              : { result: undefined, error: text, status: "error" },
+            cancelled ? `зупинено користувачем: ${text}` : `помилка: ${text}`,
+            cancelled ? "info" : "error",
+          );
+          return { ok: false, result: undefined, error: text, cancelled };
         });
+    },
+    [appendLog, patchOp],
+  );
+
+  /**
+   * Зупинка операції. `job.cancel` приймає СЕРВЕРНИЙ id, а не нашу мітку ref,
+   * тож id беремо з першої події прогресу (docs/notes/phase3.md — чинний баг).
+   * Поки події не було, зупиняти нічого: чесно кажемо про це, а не мовчимо.
+   * Відповідь `cancelled:false` теж показуємо як є — бекенд поки що не вміє
+   * переривати пайплайн, і вигадувати за нього успіх не можна.
+   */
+  const cancelOp = useCallback(
+    async (key) => {
+      const op = opsRef.current[key];
+      if (!op?.running) return { cancelled: false, reason: "операція вже не виконується" };
+
+      const source = op.label || key;
+      patchOp(key, { cancelRequested: true, cancelling: true });
+
+      if (typeof op.rpcId !== "number") {
+        const reason = "серверний id ще невідомий — не було жодної події прогресу";
+        patchOp(key, { cancelling: false, cancelAck: false, cancelReason: reason });
+        appendLog({ source, text: `зупинити не вдалося: ${reason}`, level: "error" });
+        return { cancelled: false, reason };
+      }
+
+      try {
+        const result = await jobCancel(op.rpcId);
+        const ack = Boolean(result?.cancelled);
+        const reason = result?.reason || (ack ? "" : "бекенд не підтвердив скасування");
+        patchOp(key, { cancelling: false, cancelAck: ack, cancelReason: reason });
+        appendLog({
+          source,
+          text: ack
+            ? `скасування прийнято бекендом (id ${op.rpcId})`
+            : `зупинити не вдалося (id ${op.rpcId}): ${reason}`,
+          level: ack ? "info" : "error",
+        });
+        return { cancelled: ack, reason };
+      } catch (error) {
+        const reason = errorText(error);
+        patchOp(key, { cancelling: false, cancelAck: false, cancelReason: reason });
+        appendLog({ source, text: `job.cancel впав: ${reason}`, level: "error" });
+        return { cancelled: false, reason };
+      }
     },
     [appendLog, patchOp],
   );
@@ -166,10 +303,34 @@ export function useDevRuntime() {
     [ops],
   );
 
-  return { ops, run, note, anyRunning, runningCount, logEntries, clearLog };
+  return {
+    ops,
+    run,
+    cancelOp,
+    note,
+    anyRunning,
+    runningCount,
+    logEntries: log.entries,
+    logDropped: log.dropped,
+    clearLog,
+  };
 }
 
 /** Стан однієї операції з безпечними значеннями за замовчуванням. */
 export function opState(ops, key) {
-  return ops[key] || { running: false, pct: null, msg: null, error: null, result: undefined };
+  return (
+    ops[key] || {
+      running: false,
+      status: "idle",
+      pct: null,
+      msg: null,
+      error: null,
+      result: undefined,
+      cancelRequested: false,
+      cancelAck: false,
+      cancelReason: null,
+      cancelling: false,
+      cancelledText: null,
+    }
+  );
 }

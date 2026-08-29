@@ -16,7 +16,6 @@ import { fileURLToPath } from "url";
 
 import { config, reloadConfig } from "../config/config.js";
 import { db } from "../services/db.service.js";
-import { ollama } from "../services/ollama.service.js";
 import { check as bootstrapCheck, pullModel as bootstrapPullModel } from "../bootstrap/index.js";
 import { processQuery } from "../modules/rag/engine.js";
 import {
@@ -35,10 +34,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.resolve(__dirname, "..");
 
 /**
- * Реєстр активних довгих задач: id → { method, startedAt, cancelled }.
- * Заповнює сервер (server.js) на час виконання методу.
+ * Реєстр активних довгих задач:
+ * id → { id, method, startedAt, cancelled, controller: AbortController }.
+ * Заповнює сервер (server.js) на час виконання методу; `controller` смикає
+ * метод job.cancel, а його `signal` доходить до циклів пайплайна.
  */
 export const jobs = new Map();
+
+/**
+ * Чи скасовано поточну задачу. Пайплайн не кидає помилку через сигнал —
+ * він виходить з циклу, тому стан «скасовано» читаємо саме з сигналу.
+ */
+function wasCancelled(ctx) {
+  return Boolean(ctx && ctx.signal && ctx.signal.aborted);
+}
 
 /**
  * Витягує відсоток із текстового повідомлення пайплайна.
@@ -56,6 +65,14 @@ export function extractPct(msg) {
   return Math.max(0, Math.min(100, Math.round((current / total) * 100)));
 }
 
+/**
+ * Скільки чекаємо, поки дочірній процес завершиться сам після SIGTERM,
+ * перш ніж добити його SIGKILL. Спінер @clack у дочірньому процесі ставить
+ * власний обробник SIGTERM, тому без цього запобіжника векторизація
+ * продовжувала б жити фоном уже після скасування.
+ */
+const CHILD_KILL_GRACE_MS = 2000;
+
 /** Дозволені значення db.clear → відповідний виклик db-сервісу. */
 const CLEAR_TARGETS = {
   all: () => db.clearAll(),
@@ -72,12 +89,25 @@ const CLEAR_TARGETS = {
 /**
  * Запускає окремий Node-процес (як це робить CLI для векторизації під іншу
  * модель) і транслює його stdout у прогрес.
+ *
+ * `signal` передаємо штатною опцією child_process: Node сам вбиває дочірній
+ * процес, коли контролер спрацював. Власного механізму вбивання не пишемо.
+ *
+ * @returns {Promise<{cancelled: boolean, code: number|null, pid: number|undefined}>}
  */
-function runChildScript(scriptPath, envModel, onProgress) {
+function runChildScript(scriptPath, envModel, onProgress, signal = null) {
   return new Promise((resolve, reject) => {
     const env = { ...process.env };
     if (envModel) env.EMBED_MODEL = envModel;
-    const child = spawn(process.execPath, [scriptPath], { env, stdio: ["ignore", "pipe", "pipe"] });
+    // Дочірній процес працює під замком батька: pipeline.fullSync уже його взяв,
+    // і без цієї змінної дитина блокувалась би об власного батька.
+    env.PIPELINE_LOCK_OWNER_PID = String(process.pid);
+    const child = spawn(process.execPath, [scriptPath], {
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      signal: signal || undefined,
+    });
+    const pid = child.pid;
 
     child.stdout.on("data", (buf) => {
       const line = buf.toString().trim();
@@ -87,13 +117,122 @@ function runChildScript(scriptPath, envModel, onProgress) {
       const line = buf.toString().trim();
       if (line) onProgress(`[${envModel || "default"}] ${line}`);
     });
-    child.on("error", reject);
-    child.on("close", (code) =>
-      code === 0
-        ? resolve(code)
-        : reject(new Error(`Скрипт ${path.basename(scriptPath)} завершився з кодом ${code}`)),
-    );
+    const name = path.basename(scriptPath);
+
+    // Запобіжник: якщо процес не зник за grace-період після SIGTERM — SIGKILL.
+    let killTimer = null;
+    const escalate = () => {
+      onProgress(`Скасування: дочірньому процесу ${name} (pid ${pid}) надіслано SIGTERM.`);
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          onProgress(`Дочірній процес ${name} (pid ${pid}) не зупинився — надсилаємо SIGKILL.`);
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // Процес уже завершився між перевіркою і сигналом — це нормально.
+          }
+        }
+      }, CHILD_KILL_GRACE_MS);
+    };
+    if (signal) {
+      if (signal.aborted) escalate();
+      else signal.addEventListener("abort", escalate, { once: true });
+    }
+
+    // Abort породжує AbortError на рівні spawn — це не збій скрипта. Фінальну
+    // відповідь віддаємо лише з `close`, тобто коли процес справді помер.
+    child.on("error", (error) => {
+      if (signal && signal.aborted) return;
+      clearTimeout(killTimer);
+      reject(error);
+    });
+    child.on("close", (code, termSignal) => {
+      clearTimeout(killTimer);
+      if (signal && signal.aborted) {
+        onProgress(
+          `Дочірній процес ${name} (pid ${pid}) зупинено (код ${code}, сигнал ${termSignal}).`,
+        );
+        resolve({ cancelled: true, code, pid });
+        return;
+      }
+      if (code === 0) resolve({ cancelled: false, code, pid });
+      else reject(new Error(`Скрипт ${name} завершився з кодом ${code}`));
+    });
   });
+}
+
+/**
+ * Тіло повного циклу оновлення. Винесено з реєстру методів, щоб RPC-метод міг
+ * узяти файл-замок ОДИН раз на весь прогін: кроки всередині (runScanApps,
+ * runVectorize, ...) беруть той самий замок повторно і бачать, що він уже їхній.
+ */
+async function fullSyncLocked(params, ctx) {
+  const progress = (msg) => ctx.onProgress(msg, extractPct(msg));
+  const signal = ctx.signal;
+
+  // Проміжний результат наповнюємо по кроках: якщо задачу скасують,
+  // клієнт отримає її саме в такому вигляді — зі станом і зробленим.
+  const out = {
+    newApps: 0,
+    docsCount: 0,
+    mbDownloaded: "0",
+    generated: 0,
+    chunks: 0,
+    intents: 0,
+    perModel: {},
+    cancelled: false,
+    stoppedAt: null,
+  };
+
+  /** Позначає крок, на якому спинилися, якщо сигнал уже спрацював. */
+  const stopped = (step) => {
+    if (!wasCancelled(ctx)) return false;
+    out.cancelled = true;
+    out.stoppedAt = step;
+    return true;
+  };
+
+  out.newApps = await runScanApps(progress, signal);
+  if (stopped("scanApps")) return out;
+
+  const web = await runFetchDocs(progress, signal);
+  out.docsCount += web?.docsCount || 0;
+  out.mbDownloaded = web?.mbDownloaded || "0";
+  if (stopped("fetchDocs")) return out;
+
+  const local = await runFetchLocalDocs(progress, signal);
+  out.docsCount += local?.docsCount || 0;
+  if (stopped("fetchLocalDocs")) return out;
+
+  out.generated = await runKeywordAugmentation(progress, signal);
+  if (stopped("keywordAugmentation")) return out;
+
+  const models = Array.isArray(params.models) ? params.models : null;
+
+  if (models && models.length > 0) {
+    const script = path.join(SRC_DIR, "cli", "run-vectorize.js");
+    for (const model of models) {
+      if (model === config.embedModelName) {
+        out.perModel[model] = await runVectorize(progress, signal);
+        out.chunks += out.perModel[model];
+      } else {
+        ctx.onProgress(`Векторизація в окремому процесі для моделі ${model}...`, null);
+        // Сигнал іде і в дочірній процес: скасування вбиває і його.
+        const child = await runChildScript(script, model, progress, signal);
+        out.perModel[model] = child.cancelled ? "cancelled" : "done";
+      }
+      if (stopped(`vectorize:${model}`)) return out;
+    }
+  } else {
+    out.chunks = await runVectorize(progress, signal);
+    out.perModel[config.embedModelName] = out.chunks;
+    if (stopped("vectorize")) return out;
+  }
+
+  out.intents = await runVectorizeIntents(progress, signal);
+  stopped("vectorizeIntents");
+
+  return out;
 }
 
 export const methods = {
@@ -103,8 +242,10 @@ export const methods = {
   },
 
   /** Модуль 2.1: делегує у sidecar/src/bootstrap. */
-  async "bootstrap.check"() {
-    return await bootstrapCheck();
+  async "bootstrap.check"(params, ctx) {
+    // Прогрес потрібен лише коли ввімкнено config.bootstrap.autoPull:
+    // тоді перевірка сама тягне відсутні моделі й це триває довго.
+    return await bootstrapCheck((msg, pct) => ctx.onProgress(msg, pct ?? null));
   },
 
   /** `ollama pull` зі стрімінгом прогресу. Логіка — в модулі 2.1. */
@@ -122,7 +263,12 @@ export const methods = {
     return reloadConfig();
   },
 
-  /** RAG-пошук: обгортка над processQuery(). */
+  /**
+   * RAG-пошук: обгортка над processQuery().
+   * `searchMode` і `excludeLocal` не обов'язкові: null означає «взяти з конфіга».
+   * Невідомий searchMode движок відхиляє помилкою — мовчазний фолбек ховав би
+   * друкарську помилку в панелі розробника.
+   */
   async query(params = {}, ctx) {
     const text = params.text;
     if (!text || !String(text).trim()) throw new Error("Не вказано параметр `text`.");
@@ -130,84 +276,57 @@ export const methods = {
       String(text),
       (msg) => ctx.onProgress(msg, extractPct(msg)),
       params.searchMode ?? null,
-      params.excludeLocal ?? false,
+      params.excludeLocal ?? null,
     );
   },
 
+  // Кожен метод пайплайна прокидає ctx.signal у функцію і повертає поле
+  // `cancelled`: скасована операція — це нормальний результат із тим, що
+  // встигло зробитися, а не кадр `error`.
   async "pipeline.scanApps"(params, ctx) {
-    const newApps = await runScanApps((msg) => ctx.onProgress(msg, extractPct(msg)));
-    return { newApps };
+    const newApps = await runScanApps((msg) => ctx.onProgress(msg, extractPct(msg)), ctx.signal);
+    return { newApps, cancelled: wasCancelled(ctx) };
   },
 
   async "pipeline.fetchDocs"(params, ctx) {
-    return await runFetchDocs((msg) => ctx.onProgress(msg, extractPct(msg)));
+    const res = await runFetchDocs((msg) => ctx.onProgress(msg, extractPct(msg)), ctx.signal);
+    return { ...res, cancelled: wasCancelled(ctx) };
   },
 
   async "pipeline.fetchLocalDocs"(params, ctx) {
-    return await runFetchLocalDocs((msg) => ctx.onProgress(msg, extractPct(msg)));
+    const res = await runFetchLocalDocs((msg) => ctx.onProgress(msg, extractPct(msg)), ctx.signal);
+    return { ...res, cancelled: wasCancelled(ctx) };
   },
 
   async "pipeline.keywordAugmentation"(params, ctx) {
-    const generated = await runKeywordAugmentation((msg) => ctx.onProgress(msg, extractPct(msg)));
-    return { generated };
+    const generated = await runKeywordAugmentation(
+      (msg) => ctx.onProgress(msg, extractPct(msg)),
+      ctx.signal,
+    );
+    return { generated, cancelled: wasCancelled(ctx) };
   },
 
   async "pipeline.vectorize"(params, ctx) {
-    const chunks = await runVectorize((msg) => ctx.onProgress(msg, extractPct(msg)));
-    return { chunks };
+    const chunks = await runVectorize((msg) => ctx.onProgress(msg, extractPct(msg)), ctx.signal);
+    return { chunks, cancelled: wasCancelled(ctx) };
   },
 
   async "pipeline.vectorizeIntents"(params, ctx) {
-    const chunks = await runVectorizeIntents((msg) => ctx.onProgress(msg, extractPct(msg)));
-    return { chunks };
+    const chunks = await runVectorizeIntents(
+      (msg) => ctx.onProgress(msg, extractPct(msg)),
+      ctx.signal,
+    );
+    return { chunks, cancelled: wasCancelled(ctx) };
   },
 
   /**
    * Повний цикл оновлення бази — та сама послідовність, що й пункт
    * «🛸 Повне оновлення» в CLI.
-   * `models` (необов'язковий) повторює режим «Обидва»: додаткова векторизація
-   * під кожну модель окремим процесом, бо EMBED_MODEL читається при старті.
+   * Замок беремо ОДИН раз на весь прогін: інакше дочірній процес векторизації
+   * («чужа» модель) зіткнувся б із замком власного батька.
    */
   async "pipeline.fullSync"(params = {}, ctx) {
-    const progress = (msg) => ctx.onProgress(msg, extractPct(msg));
-
-    const newApps = await runScanApps(progress);
-    const web = await runFetchDocs(progress);
-    const local = await runFetchLocalDocs(progress);
-    const generated = await runKeywordAugmentation(progress);
-
-    const models = Array.isArray(params.models) ? params.models : null;
-    let chunks = 0;
-    const perModel = {};
-
-    if (models && models.length > 0) {
-      const script = path.join(SRC_DIR, "cli", "run-vectorize.js");
-      for (const model of models) {
-        if (model === config.embedModelName) {
-          perModel[model] = await runVectorize(progress);
-          chunks += perModel[model];
-        } else {
-          ctx.onProgress(`Векторизація в окремому процесі для моделі ${model}...`, null);
-          await runChildScript(script, model, progress);
-          perModel[model] = "done";
-        }
-      }
-    } else {
-      chunks = await runVectorize(progress);
-      perModel[config.embedModelName] = chunks;
-    }
-
-    const intents = await runVectorizeIntents(progress);
-
-    return {
-      newApps,
-      docsCount: (web?.docsCount || 0) + (local?.docsCount || 0),
-      mbDownloaded: web?.mbDownloaded || "0",
-      generated,
-      chunks,
-      intents,
-      perModel,
-    };
+    return await db.withWriteLock("pipeline.fullSync", () => fullSyncLocked(params, ctx));
   },
 
   /** Статистика бази (пункт «📊» у CLI). Читає SQLite на ~1.5 ГБ, буває повільно. */
@@ -215,7 +334,7 @@ export const methods = {
     return await db.getStats();
   },
 
-  /** Очищення бази. `target` — один із CLEAR_TARGETS. */
+  /** Очищення бази. `target` — один із CLEAR_TARGETS. Це запис, тому під замком. */
   async "db.clear"(params = {}) {
     const target = params.target;
     const action = CLEAR_TARGETS[target];
@@ -224,35 +343,32 @@ export const methods = {
         `Невідомий target «${target}». Дозволені: ${Object.keys(CLEAR_TARGETS).join(", ")}.`,
       );
     }
-    await action();
+    await db.withWriteLock(`db.clear(${target})`, () => action());
     return { cleared: target };
   },
 
-  /** RAG-бенчмарк. */
+  /**
+   * Примусове зняття файла-замка. Кнопка для людини: краще так, ніж шукати
+   * і видаляти файл руками. Замок живого процесу без `force` не знімаємо —
+   * це повернуло б саме ту гонку, від якої замок захищає.
+   */
+  async "db.unlock"(params = {}) {
+    return await db.forceUnlock({ force: params.force === true });
+  },
+
+  /**
+   * RAG-бенчмарк. Недоступна Ollama — це помилка методу (кадр `error`),
+   * а не смерть процесу: runRagTests() більше не робить process.exit.
+   */
   async "tests.run"(params, ctx) {
-    // Захист: runRagTests() робить process.exit(1), якщо Ollama недоступна,
-    // а сервер падати не має права. Перевіряємо доступність заздалегідь.
-    const status = await ollama.checkAvailability();
-    if (!status.isAvailable) throw new Error("Ollama не запущена — тести не можуть стартувати.");
-    // runRagTests() не приймає onProgress (сигнатура без аргументів), тож поетапного
-    // прогресу немає. Віддаємо хоча б стартову подію, щоб панель не мовчала кілька хвилин.
-    ctx.onProgress(
-      "Запуск RAG-бенчмарку... (детальний прогрес недоступний, дивіться консоль sidecar)",
-      null,
-    );
-    return (await runRagTests()) ?? { ok: true };
+    ctx.onProgress("Запуск RAG-бенчмарку...", 0);
+    return await runRagTests((msg, pct) => ctx.onProgress(msg, pct ?? null));
   },
 
   /** EXTERNAL-тести (intents, OOD, ambiguous). */
   async "tests.runExternal"(params, ctx) {
-    const status = await ollama.checkAvailability();
-    if (!status.isAvailable) throw new Error("Ollama не запущена — тести не можуть стартувати.");
-    // Те саме: runExternalTests() теж без onProgress.
-    ctx.onProgress(
-      "Запуск EXTERNAL-тестів... (детальний прогрес недоступний, дивіться консоль sidecar)",
-      null,
-    );
-    return (await runExternalTests()) ?? { ok: true };
+    ctx.onProgress("Запуск EXTERNAL-тестів...", 0);
+    return await runExternalTests((msg, pct) => ctx.onProgress(msg, pct ?? null));
   },
 
   /** Список файлів у sidecar/test-reports/. */
@@ -317,24 +433,42 @@ export const methods = {
   },
 
   /**
-   * Скасування довгої операції.
-   * MVP: наявні функції пайплайна не приймають прапорця скасування (їхній
-   * єдиний аргумент — onProgress), тому реально перервати цикл нічим.
-   * Прапорець виставляємо (на майбутнє), але чесно повертаємо cancelled:false.
-   * Записано в docs/improvements.md.
+   * Скасування довгої операції: смикає AbortController задачі з реєстру.
+   * Сам сигнал доходить у цикли пайплайна і в дочірній процес векторизації;
+   * задача завершується власною фінальною відповіддю з `cancelled: true`.
    */
   "job.cancel"(params = {}) {
     const targetId = params.id;
     const job = jobs.get(targetId);
     if (!job) {
-      return { cancelled: false, reason: `Задачі з id=${targetId} немає серед активних.` };
+      return {
+        cancelled: false,
+        id: targetId ?? null,
+        reason: `Задачі з id=${targetId} немає серед активних.`,
+      };
     }
+
+    const runningMs = Date.now() - job.startedAt;
+    if (job.cancelled) {
+      return {
+        cancelled: true,
+        alreadyCancelled: true,
+        id: job.id,
+        method: job.method,
+        runningMs,
+        reason: "Задачу вже скасовано раніше, чекаємо на її фінальну відповідь.",
+      };
+    }
+
     job.cancelled = true;
+    job.controller.abort(new Error(`Задачу id=${job.id} скасовано через job.cancel.`));
     return {
-      cancelled: false,
-      reason:
-        "Функції пайплайна не підтримують скасування (приймають лише onProgress). " +
-        "Прапорець виставлено, але поточний цикл доїде до кінця.",
+      cancelled: true,
+      alreadyCancelled: false,
+      id: job.id,
+      method: job.method,
+      startedAt: job.startedAt,
+      runningMs,
     };
   },
 };

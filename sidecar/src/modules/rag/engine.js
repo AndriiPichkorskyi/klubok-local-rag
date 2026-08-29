@@ -10,28 +10,44 @@ import { db } from "../../services/db.service.js";
 import { ollama } from "../../services/ollama.service.js";
 import { generatePrompt } from "./prompts.js";
 
+/** Дозволені режими пошуку. Значення поза списком — помилка виклику, а не тихий фолбек. */
+export const SEARCH_MODES = ["vector", "fts", "hybrid"];
+
 /**
  * Основна функція обробки запиту.
  *
  * @param {string} queryText - Запит користувача (наприклад "як записати звук").
  * @param {Function} onProgress - Колбек для оновлення тексту статусу (спінера).
+ * @param {string|null} searchMode - Режим пошуку; null = взяти config.rag.searchMode.
+ * @param {boolean|null} excludeLocal - Відкинути локальну довідку; null = config.rag.excludeLocalDocs.
  * @returns {Promise<{response: string, contextApps: string[], executionTimeMs: number}>}
  */
-export async function processQuery(queryText, onProgress = () => {}, searchMode = null, excludeLocal = false) {
+export async function processQuery(queryText, onProgress = () => {}, searchMode = null, excludeLocal = null) {
   const start = performance.now();
+
+  // Аргумент має пріоритет над конфігом: панель розробника порівнює режими
+  // між собою, не переписуючи pipeline.config.json.
+  if (searchMode !== null && searchMode !== undefined && !SEARCH_MODES.includes(searchMode)) {
+    throw new Error(
+      `Невідомий searchMode «${searchMode}». Дозволені: ${SEARCH_MODES.join(", ")}.`,
+    );
+  }
+  const mode = searchMode ?? config.rag.searchMode;
+  const skipLocal =
+    typeof excludeLocal === "boolean" ? excludeLocal : config.rag.excludeLocalDocs === true;
 
   let relevantChunks = [];
 
-  if (config.rag.searchMode === "fts") {
+  if (mode === "fts") {
     onProgress("Виконуємо текстовий пошук (FTS)...");
-    relevantChunks = await db.searchSimilarFts(queryText, config.rag.topK, excludeLocal);
-  } else if (config.rag.searchMode === "hybrid") {
+    relevantChunks = await db.searchSimilarFts(queryText, config.rag.topK, skipLocal);
+  } else if (mode === "hybrid") {
     onProgress("Генеруємо вектор для гібридного пошуку...");
     const queryVector = await ollama.generateEmbedding(queryText);
 
     onProgress("Виконуємо гібридний пошук (Vector + FTS)...");
-    const vectorResults = await db.searchSimilar(queryVector, config.rag.topK, excludeLocal);
-    const ftsResults = await db.searchSimilarFts(queryText, config.rag.topK, excludeLocal);
+    const vectorResults = await db.searchSimilar(queryVector, config.rag.topK, skipLocal);
+    const ftsResults = await db.searchSimilarFts(queryText, config.rag.topK, skipLocal);
 
     // Reciprocal Rank Fusion (RRF) для об'єднання результатів
     const scores = new Map();
@@ -62,11 +78,13 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
     onProgress("Генеруємо вектор запиту...");
     const queryVector = await ollama.generateEmbedding(queryText);
     onProgress("Шукаємо релевантні інструменти у векторній базі...");
-    relevantChunks = await db.searchSimilar(queryVector, config.rag.topK, excludeLocal);
+    relevantChunks = await db.searchSimilar(queryVector, config.rag.topK, skipLocal);
   }
 
   // МЕТРИКИ ПОШУКУ
   let retrievalStats = {
+    searchMode: mode,
+    excludeLocal: skipLocal,
     initialChunks: relevantChunks.length,
     filteredChunks: relevantChunks.length,
     distances: relevantChunks.filter(c => c._distance !== undefined).map(c => c._distance)
@@ -74,7 +92,7 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
 
   // === 1. Strict Top-K (Фільтрація по порогу релевантності) ===
   // Якщо ми використовуємо чисто векторний пошук, відкидаємо занадто далекі результати
-  if (config.rag.searchMode === "vector") {
+  if (mode === "vector") {
     // В LanceDB менший _distance означає більшу схожість. Поріг підбирається експериментально.
     const distanceThreshold = 0.95;
     relevantChunks = relevantChunks.filter(
@@ -86,9 +104,12 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
   if (relevantChunks.length === 0) {
     return {
       response: "Не вдалося знайти жодних релевантних інструментів для вашого запиту.",
+      rawLlmOutput: null,
+      recommendedApp: "NOT_FOUND",
+      alternativeApps: [],
       contextApps: [],
       executionTimeMs: performance.now() - start,
-      recommendedApp: "NOT_FOUND",
+      ollamaMetrics: null,
       retrievalStats
     };
   }
@@ -209,7 +230,12 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
         responseText = `**${recommendedApp}**\n\n` + responseText;
         responseText += `\n\n**📄 Повна стаття довідки (${sourceDoc.appName} - ${sourceDoc.title}):**\n\n${sourceDoc.content.trim()}`;
       }
-    } else {
+    }
+
+    // Тег [SOURCE_ID: X] з номером поза межами списку документів = посилання на
+    // неіснуюче джерело. Довіряти такій відповіді не можна, тож обробляємо її
+    // так само, як відсутній тег, а не віддаємо сирий текст LLM разом із тегом.
+    if (!recommendedApp) {
       if (responseText.includes("INVALID_QUERY")) {
         responseText = "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.";
         recommendedApp = "INVALID_QUERY";
@@ -220,14 +246,20 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
     }
   }
 
-  // Альтернативні програми (все, що знайшла векторна база, крім головної рекомендації)
-  const alternativeApps = uniqueApps.filter(app => app !== recommendedApp);
+  // Альтернативні програми (все, що знайшла векторна база, крім головної рекомендації).
+  // Маркер замість назви означає «рекомендації немає», тож альтернатив теж немає:
+  // інакше сюди потрапляв би весь контекст як «найкращі з поганих» збігів.
+  const MARKERS = ["NOT_FOUND", "INVALID_QUERY", "Не визначено"];
+  const finalApp = recommendedApp || "Не визначено";
+  const alternativeApps = MARKERS.includes(finalApp)
+    ? []
+    : uniqueApps.filter((app) => app !== finalApp);
 
   // Повертаємо всі дані для подальшого запиту фідбеку та логування у CLI
   return {
     response: responseText,
     rawLlmOutput: rawLlmOutput,
-    recommendedApp: recommendedApp || "Не визначено",
+    recommendedApp: finalApp,
     alternativeApps,
     contextApps: uniqueApps,
     executionTimeMs,

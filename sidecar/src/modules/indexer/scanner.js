@@ -43,6 +43,8 @@ export async function scanApplications(
           file.endsWith(".prefPane"),
       );
 
+      onProgress(`Сканування ${appsDir}: знайдено ${apps.length} пакетів...`);
+
       for (const app of apps) {
         const appPath = path.join(appsDir, app);
         const contentsPath = path.join(appPath, "Contents");
@@ -58,7 +60,11 @@ export async function scanApplications(
           const parsedPlist = plist.parse(xmlContent);
 
           let appName =
-            parsedPlist.CFBundleDisplayName || parsedPlist.CFBundleName || app.replace(".app", "");
+            parsedPlist.CFBundleDisplayName ||
+            parsedPlist.CFBundleName ||
+            // Прибираємо будь-яке розширення пакета, а не лише ".app",
+            // інакше в базу потрапляло «Створити PDF.workflow»
+            path.basename(app, path.extname(app));
           const bundleId = parsedPlist.CFBundleIdentifier;
           const helpBookFolder = parsedPlist.CFBundleHelpBookFolder;
           let hpdProjectIdentifier = parsedPlist.HPDHelpProjectIdentifier;

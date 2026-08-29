@@ -7,17 +7,31 @@ import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 
-/** tests.run повертає булеве «жоден кейс не провалився». */
+/**
+ * tests.run і tests.runExternal повертають
+ * {ok, totalCases, passed, failed, passRate, reportPath}.
+ * Булеве значення лишилось у гілці сумісності зі старою поведінкою.
+ */
 function verdict(result) {
+  if (result && typeof result === "object") {
+    const { ok, totalCases, passed, failed, passRate } = result;
+    const parts = [];
+    if (Number.isFinite(passed) && Number.isFinite(totalCases)) {
+      parts.push(`пройдено ${passed} з ${totalCases}`);
+    }
+    if (Number.isFinite(failed) && failed > 0) parts.push(`провалено ${failed}`);
+    if (Number.isFinite(passRate)) parts.push(`${passRate}%`);
+    return {
+      text: parts.length ? parts.join(" · ") : JSON.stringify(result),
+      className: ok ? "dp-ok" : "dp-warn",
+    };
+  }
   if (result === true) return { text: "усі кейси пройдено", className: "dp-ok" };
   if (result === false) return { text: "є провалені кейси — дивіться звіт", className: "dp-warn" };
-  if (result && typeof result === "object") {
-    return { text: JSON.stringify(result), className: "muted" };
-  }
   return null;
 }
 
-export default function TestsSection({ ops, run, onFinished }) {
+export default function TestsSection({ ops, run, cancelOp, onFinished }) {
   const rag = opState(ops, "tests.run");
   const external = opState(ops, "tests.runExternal");
 
@@ -41,6 +55,7 @@ export default function TestsSection({ ops, run, onFinished }) {
           op={rag}
           label="RAG-бенчмарк (tests.run)"
           onClick={() => start("tests.run", "RAG-бенчмарк")}
+          onCancel={() => cancelOp?.("tests.run")}
         >
           {renderVerdict(rag)}
         </OpButton>
@@ -49,6 +64,7 @@ export default function TestsSection({ ops, run, onFinished }) {
           op={external}
           label="EXTERNAL-тести (tests.runExternal)"
           onClick={() => start("tests.runExternal", "EXTERNAL-тести")}
+          onCancel={() => cancelOp?.("tests.runExternal")}
         >
           {renderVerdict(external)}
         </OpButton>

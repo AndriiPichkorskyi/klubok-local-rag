@@ -1,10 +1,7 @@
 {
   "_опис": "Єдиний конфіг усього проєкта. Читається sidecar/src/config/config.js та Rust-частиною. Змінюйте тут, а не в коді.",
   "embedModelName": "qwen3-embedding:0.6b",
-  "_embedModelName_варіанти": [
-    "qwen3-embedding:0.6b",
-    "qwen3-embedding:4b"
-  ],
+  "_embedModelName_варіанти": ["qwen3-embedding:0.6b", "qwen3-embedding:4b"],
   "rpc": {
     "host": "127.0.0.1",
     "port": 17817,
@@ -35,11 +32,7 @@
   "rag": {
     "topK": 15,
     "searchMode": "hybrid",
-    "_searchMode_варіанти": [
-      "vector",
-      "fts",
-      "hybrid"
-    ],
+    "_searchMode_варіанти": ["vector", "fts", "hybrid"],
     "enableXmlTags": true,
     "enableContextReordering": true,
     "enableJsonFormat": true,
@@ -47,24 +40,15 @@
     "excludeLocalDocs": false
   },
   "bootstrap": {
-    "requiredModels": [
-      "qwen3:1.7b",
-      "qwen3-embedding:0.6b"
-    ],
-    "optionalModels": [
-      "qwen3-embedding:4b",
-      "qwen2.5vl:3b"
-    ],
+    "requiredModels": ["qwen3:1.7b", "qwen3-embedding:0.6b"],
+    "optionalModels": ["qwen3-embedding:4b", "qwen2.5vl:3b"],
     "autoPull": false,
     "_autoPull_коментар": "true = завантажувати відсутні моделі автоматично при першому запуску"
   },
   "walkthrough": {
     "enableScreenAnalysis": true,
     "captureMode": "window",
-    "_captureMode_варіанти": [
-      "window",
-      "fullscreen"
-    ],
+    "_captureMode_варіанти": ["window", "fullscreen"],
     "screenshotDir": "./sidecar/data/screenshots",
     "maxStepsPerSession": 12
   }

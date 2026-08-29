@@ -23,7 +23,7 @@ function highlights(config) {
   ].filter(([, value]) => value !== undefined && value !== null);
 }
 
-export default function ConfigSection({ ops, run, config }) {
+export default function ConfigSection({ ops, run, cancelOp, config }) {
   const getOp = opState(ops, "config.get");
   const reloadOp = opState(ops, "config.reload");
 
@@ -39,11 +39,13 @@ export default function ConfigSection({ ops, run, config }) {
           op={getOp}
           label="Показати поточний (config.get)"
           onClick={() => run("config.get", "Конфіг", (ref) => rpc("config.get", {}, ref))}
+          onCancel={() => cancelOp?.("config.get")}
         />
         <OpButton
           op={reloadOp}
           label="Перечитати з диска (config.reload)"
           onClick={() => run("config.reload", "Перечитування конфіга", (ref) => rpc("config.reload", {}, ref))}
+          onCancel={() => cancelOp?.("config.reload")}
         />
       </div>
 

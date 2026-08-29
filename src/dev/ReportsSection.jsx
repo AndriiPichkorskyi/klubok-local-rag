@@ -11,7 +11,7 @@ import ReportTable from "./ReportTable";
 import { opState } from "./useDevRuntime";
 import { formatBytes, formatDateTime } from "./format";
 
-export default function ReportsSection({ ops, run, refreshKey }) {
+export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
   const listOp = opState(ops, "reports.list");
   const readOp = opState(ops, "reports.read");
   const dir = listOp.result?.dir || "";
@@ -98,6 +98,7 @@ export default function ReportsSection({ ops, run, refreshKey }) {
                 rpc("reports.read", { name: selected }, ref),
               )
             }
+            onCancel={() => cancelOp?.("reports.read")}
           />
 
           {loaded ? <ReportTable data={loaded} /> : null}

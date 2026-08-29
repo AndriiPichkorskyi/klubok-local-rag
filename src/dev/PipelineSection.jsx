@@ -4,7 +4,7 @@
  * окрема кнопка на кожен крок плюс повне оновлення.
  */
 import { useState } from "react";
-import { rpc, jobCancel } from "../ipc";
+import { rpc } from "../ipc";
 import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
@@ -20,7 +20,7 @@ const STEPS = [
   { key: "pipeline.vectorizeIntents", label: "6. Вектори намірів" },
 ];
 
-export default function PipelineSection({ ops, run, note, embedModels }) {
+export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
   const [models, setModels] = useState([]);
 
   const toggleModel = (model) =>
@@ -36,29 +36,21 @@ export default function PipelineSection({ ops, run, note, embedModels }) {
     );
 
   /**
-   * Скасування. job.cancel приймає СЕРВЕРНИЙ id, а не нашу мітку ref, тож id
-   * беремо з першої події прогресу з нашим ref. Поки події не було — кнопки немає.
-   * Сам sidecar чесно відповідає, що пайплайн не переривається.
+   * Зупинка живе в useDevRuntime: job.cancel приймає СЕРВЕРНИЙ id, а не нашу
+   * мітку ref, тож id беремо з першої події прогресу (docs/notes/phase3.md).
+   * Що саме відповів бекенд — показує сама кнопка «Стоп», без прикрас:
+   * `cancelled:false` означає «зупинити не вдалося», а не «зупинено».
    */
-  const cancel = async (op) => {
-    if (!op?.rpcId) return;
-    try {
-      const result = await jobCancel(op.rpcId);
-      note("job.cancel", `${result?.cancelled ? "скасовано" : "не скасовано"}: ${result?.reason || ""}`, "info");
-    } catch (error) {
-      note("job.cancel", String(error), "error");
-    }
-  };
-
   const renderOp = ({ key, label }) => {
     const op = opState(ops, key);
     return (
-      <OpButton key={key} op={op} label={label} onClick={() => startStep(key, label)}>
-        {op.running && op.rpcId ? (
-          <button type="button" className="dp-small" onClick={() => cancel(op)}>
-            Спробувати скасувати (id {op.rpcId})
-          </button>
-        ) : null}
+      <OpButton
+        key={key}
+        op={op}
+        label={label}
+        onClick={() => startStep(key, label)}
+        onCancel={() => cancelOp?.(key)}
+      >
         {!op.running && op.result !== undefined ? (
           <div className="dp-op-msg">{summarizeResult(op.result)}</div>
         ) : null}

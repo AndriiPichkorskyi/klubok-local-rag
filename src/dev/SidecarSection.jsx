@@ -12,7 +12,7 @@ import OpButton, { ErrorBox } from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { errorText } from "./format";
 
-export default function SidecarSection({ ops, run, note }) {
+export default function SidecarSection({ ops, run, cancelOp, note }) {
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
@@ -67,7 +67,12 @@ export default function SidecarSection({ ops, run, note }) {
       </dl>
 
       <div className="dp-grid">
-        <OpButton op={pingOp} label="Перевірити живість (ping)" onClick={() => run("ping", "ping", (ref) => rpc("ping", {}, ref))}>
+        <OpButton
+          op={pingOp}
+          label="Перевірити живість (ping)"
+          onClick={() => run("ping", "ping", (ref) => rpc("ping", {}, ref))}
+          onCancel={() => cancelOp?.("ping")}
+        >
           {pingOp.result ? (
             <div className="dp-op-msg">
               pid {pingOp.result.pid} · версія {pingOp.result.version}
@@ -88,6 +93,7 @@ export default function SidecarSection({ ops, run, note }) {
           op={bootstrapOp}
           label="Перевірити оточення (bootstrap.check)"
           onClick={() => run("bootstrap.check", "Перевірка оточення", (ref) => rpc("bootstrap.check", {}, ref))}
+          onCancel={() => cancelOp?.("bootstrap.check")}
         />
       </div>
 

@@ -201,3 +201,151 @@ table.dp-table td.dp-num { text-align: right; font-family: var(--mono); }
 .dp-dialog-title { font-weight: 600; color: var(--err); }
 .dp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dp-dialog-actions .dp-danger { border-color: var(--err); color: var(--err); }
+
+/* --- Повний прогін: прапорці, список кроків, підсумок. --------------------- */
+
+/* Групи прапорців. Чекбокс не має розтягуватись на всю ширину (input{width:100%}). */
+.dp-check-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.dp-check { gap: 4px; font-size: 12px; }
+.dp-check input[type="checkbox"] { width: auto; }
+
+/* Список кроків прогону: поточний видно, завершені позначені, наступні чекають. */
+.dp-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dp-step {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dp-step-head { gap: 8px; }
+.dp-step-num {
+  flex: 0 0 auto;
+  min-width: 18px;
+  text-align: right;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.dp-step-label { font-size: 13px; flex: 1 1 auto; min-width: 0; }
+
+/* Кнопка «Стоп» поруч із запущеною операцією. */
+.dp-stop-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dp-stop-row button { width: auto; padding: 2px 8px; }
+
+/* Підсумок прогону — те, що людина читає зранку. */
+.dp-summary {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dp-summary-head { font-weight: 600; font-size: 13px; }
+
+/* --- Вкладки панелі. ------------------------------------------------------- */
+/* Групування — за причиною відкривати панель, не за технічним поділом методів.
+   Приховані вкладки лишаються змонтованими (див. DevPanel.jsx), тому вкладка —
+   це суто перемикач видимості, а не місце, де щось «починається спочатку». */
+
+.dp-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+
+.dp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius) var(--radius) 0 0;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.dp-tab:hover:not(:disabled) { color: var(--fg); border-color: var(--line); }
+.dp-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.dp-tab[aria-selected="true"] {
+  background: var(--bg);
+  border-color: var(--line);
+  border-bottom-color: var(--accent);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Вкладка, на якій ЗАРАЗ щось виконується. Без цієї позначки після переходу
+   на іншу вкладку людина забуває, де залишила прогін. */
+.dp-tab-busy, .dp-tab-busy[aria-selected="true"] { color: var(--warn); }
+.dp-tab-busy:hover:not(:disabled) { color: var(--warn); }
+
+.dp-tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: 0 0 auto;
+  animation: dp-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .25; }
+}
+
+.dp-tab-count { font-family: var(--mono); font-size: 11px; }
+
+/* Вміст однієї вкладки. Прихована — саме display:none, стан секцій живий. */
+.dp-pane { display: flex; flex-direction: column; gap: 12px; }
+.dp-pane[hidden] { display: none; }
+
+/* --- Керування журналом: фільтр, пауза автопрокрутки, копіювання. ---------- */
+
+.dp-log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex: 0 0 auto;
+}
+
+.dp-log-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.dp-log-tools button { padding: 2px 8px; font-size: 11px; }
+
+.dp-log-filter {
+  width: auto;
+  max-width: 150px;
+  padding: 2px 6px;
+  font-size: 11px;
+}

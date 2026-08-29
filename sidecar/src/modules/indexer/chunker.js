@@ -14,6 +14,8 @@ import { config } from "../../config/config.js";
  * @returns {string[]} - Масив текстових фрагментів (чанків).
  */
 export function chunkText(text) {
+  if (!text) return [];
+
   const { chunkSize, chunkOverlap } = config.indexer;
   const chunks = [];
   let i = 0;
@@ -42,6 +44,14 @@ export function chunkText(text) {
     i = end - chunkOverlap;
     if (i < 0) i = 0;
     if (end >= text.length) break;
+  }
+
+  // Поріг у 50 символів має відсікати лише хвости довгого тексту.
+  // Якщо коротким виявився весь документ, він зникав повністю — саме так
+  // губилися META-чанки програм з короткою назвою (TV, Mail, Maps...).
+  if (chunks.length === 0) {
+    const whole = text.trim();
+    if (whole.length > 0) chunks.push(whole);
   }
 
   return chunks;

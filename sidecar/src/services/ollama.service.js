@@ -8,37 +8,88 @@ import axios from "axios";
 import readline from "readline";
 import { config } from "../config/config.js";
 
+/** Скільки чекаємо на відповідь Ollama під час перевірки живості. */
+const TAGS_TIMEOUT_MS = 5000;
+
+/** Прибирає дублі та порожні значення зі списку назв моделей. */
+function uniqueNames(list) {
+  return [...new Set(list.filter((name) => typeof name === "string" && name.trim()))];
+}
+
+/**
+ * Чи встановлена модель. Ollama віддає назви з тегом ("llama3:latest"),
+ * а модель без тега в конфізі означає саме тег ":latest".
+ * @param {string} wanted - назва з конфіга
+ * @param {string[]} installed - назви, які віддала Ollama
+ */
+export function isModelInstalled(wanted, installed) {
+  if (!wanted) return true;
+  if (installed.includes(wanted)) return true;
+  if (!wanted.includes(":")) return installed.includes(`${wanted}:latest`);
+  return false;
+}
+
+/**
+ * Єдине джерело правди про моделі. Раніше їх було два — `config.ollama`
+ * (чат + вектори) і `config.bootstrap.requiredModels` — і вони могли мовчки
+ * розійтися. Тепер обов'язковий список виводиться з моделей, які процес
+ * реально використовує, плюс те, що додано в bootstrap вручну.
+ * @returns {{required: string[], optional: string[]}}
+ */
+export function resolveModelLists() {
+  const required = uniqueNames([
+    config.ollama.chatModel,
+    config.ollama.embedModel,
+    ...(config.bootstrap?.requiredModels || []),
+  ]);
+  const optional = uniqueNames([
+    config.ollama.visionModel,
+    ...(config.bootstrap?.optionalModels || []),
+  ]).filter((model) => !required.includes(model));
+  return { required, optional };
+}
+
 class OllamaService {
-  constructor() {
-    this.baseUrl = config.ollama.baseUrl;
-    this.chatModel = config.ollama.chatModel;
-    this.embedModel = config.ollama.embedModel;
+  // Читаємо конфіг щоразу, а не копіюємо в конструкторі: інакше `config.reload`
+  // (RPC-метод config.reload) не впливав би на вже створений сервіс.
+  get baseUrl() {
+    return config.ollama.baseUrl;
+  }
+  get chatModel() {
+    return config.ollama.chatModel;
+  }
+  get embedModel() {
+    return config.ollama.embedModel;
   }
 
   /**
    * Перевіряє доступність сервера Ollama та наявність необхідних моделей.
-   * @returns {Promise<{isAvailable: boolean, missingModels: string[]}>}
+   * @returns {Promise<{isAvailable: boolean, missingModels: string[], installedModels: string[], error: string|null}>}
    */
   async checkAvailability() {
     try {
-      const { data } = await axios.get(`${this.baseUrl}/api/tags`);
-      const installedModels = data.models.map((m) => m.name);
+      const { data } = await axios.get(`${this.baseUrl}/api/tags`, { timeout: TAGS_TIMEOUT_MS });
+      // Несподіване тіло відповіді — це не «Ollama лежить»: сервер відповів.
+      // Порожній список моделей чесніший за TypeError, який ловив би catch нижче.
+      const installedModels = Array.isArray(data?.models)
+        ? data.models.map((m) => m.name).filter(Boolean)
+        : [];
 
-      const missingModels = [];
-
-      // Ollama returns names with tags, e.g. "qwen3:1.7b". If the config has exactly that, it will match.
-      // Sometimes it returns "qwen3:1.7b" and config says "qwen3:1.7b".
-      if (!installedModels.includes(this.chatModel)) missingModels.push(this.chatModel);
-      if (!installedModels.includes(this.embedModel)) missingModels.push(this.embedModel);
+      const { required } = resolveModelLists();
+      const missingModels = required.filter((model) => !isModelInstalled(model, installedModels));
 
       return {
         isAvailable: true,
         missingModels,
+        installedModels,
+        error: null,
       };
     } catch (err) {
       return {
         isAvailable: false,
         missingModels: [],
+        installedModels: [],
+        error: err.message,
       };
     }
   }

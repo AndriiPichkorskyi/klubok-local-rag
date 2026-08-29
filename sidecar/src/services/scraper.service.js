@@ -65,13 +65,17 @@ class ScraperService {
    * Фільтрує непотрібні сторінки (ліцензії, зміни).
    *
    * @param {string} hpdProjectIdentifier - Ідентифікатор довідки (наприклад, "imovie").
+   * @param {AbortSignal} [signal] - Сигнал скасування; axios уміє переривати запит сам.
    * @returns {Promise<Object[]>} - Масив посилань та заголовків.
    */
-  async getToc(hpdProjectIdentifier) {
+  async getToc(hpdProjectIdentifier, signal = null) {
     const url = `https://support.apple.com/uk-ua/guide/${hpdProjectIdentifier}/toc/`;
     return this.runWithPause(async () => {
       try {
-        const response = await axios.get(url, { timeout: config.scraper.timeoutMs });
+        const response = await axios.get(url, {
+          timeout: config.scraper.timeoutMs,
+          signal: signal || undefined,
+        });
         const data = response.data;
         this.sessionBytes += Buffer.byteLength(data, "utf8");
 
@@ -125,6 +129,8 @@ class ScraperService {
 
         return toc;
       } catch (error) {
+        // Скасування — не помилка мережі, мовчки віддаємо порожній результат.
+        if (axios.isCancel(error) || error.code === "ERR_CANCELED") return [];
         // Якщо довідки немає (404), просто повертаємо порожній масив
         if (error.response && error.response.status === 404) {
           return [];
@@ -137,12 +143,16 @@ class ScraperService {
 
   /**
    * Завантажує сирий HTML-код сторінки.
+   *
+   * @param {string} url - Адреса сторінки.
+   * @param {AbortSignal} [signal] - Сигнал скасування; axios уміє переривати запит сам.
    */
-  async fetchRawHtml(url) {
+  async fetchRawHtml(url, signal = null) {
     return this.runWithPause(async () => {
       try {
         const response = await axios.get(url, {
           timeout: config.scraper.timeoutMs,
+          signal: signal || undefined,
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
@@ -156,6 +166,8 @@ class ScraperService {
         this.sessionBytes += Buffer.byteLength(data, "utf8");
         return data;
       } catch (error) {
+        // Скасування — не помилка: лог тут лише заплутував би користувача.
+        if (axios.isCancel(error) || error.code === "ERR_CANCELED") return null;
         console.error(`Помилка отримання HTML ${url}:`, error.message);
         return null;
       }
