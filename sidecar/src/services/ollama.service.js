@@ -263,6 +263,7 @@ class OllamaService {
     timeoutMs = 120000,
     temperature = 0,
     numPredict = 400,
+    numCtx = null,
     model = null,
   }) {
     if (!prompt) throw new Error("generateVisionResponse: не вказано промпт.");
@@ -279,6 +280,10 @@ class OllamaService {
       options: {
         temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0,
         num_predict: numPredict,
+        // Без цього Ollama бере типові 4096, а зображення 1024px разом із
+        // довідкою в промпті легко дають понад 5000 токенів — і запит падає з
+        // exceed_context_size ще до того, як модель щось побачить.
+        num_ctx: Number(numCtx) || Number(config.walkthrough?.visionNumCtx) || 8192,
       },
     };
     if (system) payload.system = system;
@@ -293,6 +298,14 @@ class OllamaService {
     } catch (error) {
       if (axios.isCancel(error) || error?.name === "CanceledError") throw error;
       // Опис запиту в повідомленні: без нього незрозуміло, що саме не сподобалось.
+      const overflow = error?.response?.data?.error;
+      if (overflow?.type === "exceed_context_size_error") {
+        throw new Error(
+          `Запит не вмістився в контекст моделі: ${overflow.n_prompt_tokens} токенів ` +
+            `проти ${overflow.n_ctx} доступних. Збільште walkthrough.visionNumCtx або ` +
+            `зменште walkthrough.maxImageWidth чи walkthrough.maxDocsCharsForVision у конфізі.`,
+        );
+      }
       const shape =
         `модель ${payload.model}, зображень ${images.length}, ` +
         `base64 ${images[0] ? images[0].length : 0} символів, ` +

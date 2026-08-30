@@ -61,9 +61,20 @@ export async function prepareScreenshot(screenshotPath, tag) {
   // забрало і її, а не лишило зменшений екран користувача на диску.
   const destination = path.join(dir, `${tag.sessionId}-${tag.step}-w${maxWidth}.png`);
 
+  if (!(await screenshotExists(screenshotPath))) {
+    throw new Error(
+      `Знімок «${screenshotPath}» порожній або відсутній. Найчастіша причина — ` +
+        `дозвіл на запис екрана не діє: після його надання застосунок треба перезапустити.`,
+    );
+  }
+
   const originalStat = await fs.stat(screenshotPath);
   const resized = await adapter.resizeImage(screenshotPath, { maxWidth, destination });
   const buffer = await fs.readFile(resized.path);
+  // Порожній base64 Ollama відкидає з 400 і без пояснення, тож ловимо це тут.
+  if (buffer.length === 0) {
+    throw new Error(`Зменшена копія «${resized.path}» порожня — надсилати в модель нічого.`);
+  }
 
   return {
     path: resized.path,

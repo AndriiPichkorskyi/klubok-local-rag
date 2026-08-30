@@ -13,6 +13,8 @@ export const ACTION = {
   LAUNCH: "launch", // запустити програму (launch_app), потім перевірити
   RETRY: "retry", // повторити аналіз того самого екрана
   FINISH: "finish", // закрити сесію
+  CONFIRM: "confirm", // «я це зробив»: слово людини рухає сесію попри модель
+  MANUAL: "manual", // перейти на список кроків із довідки (ручний режим)
 };
 
 const DESCRIPTORS = {
@@ -23,6 +25,7 @@ const DESCRIPTORS = {
     hint: "",
     primary: { action: ACTION.NEXT, label: "Далі" },
     showStuck: true,
+    showConfirm: true,
     showInstruction: true,
   },
   wrong_window: {
@@ -32,6 +35,7 @@ const DESCRIPTORS = {
     hint: "Поки попереду інша програма, вести нікуди: кнопок із підказки на екрані немає.",
     primary: { action: ACTION.RECHECK, label: "Я перейшов — перевірити" },
     showStuck: false,
+    showConfirm: false,
     showInstruction: true,
   },
   app_not_started: {
@@ -41,6 +45,7 @@ const DESCRIPTORS = {
     hint: "Запустимо її — і продовжимо з першого кроку.",
     primary: { action: ACTION.LAUNCH, label: "Запустити програму" },
     showStuck: false,
+    showConfirm: false,
     showInstruction: true,
   },
   done: {
@@ -50,6 +55,24 @@ const DESCRIPTORS = {
     hint: "Мету досягнуто. Вікно підказки можна закрити.",
     primary: { action: ACTION.FINISH, label: "Завершити" },
     showStuck: false,
+    showConfirm: false,
+    showInstruction: true,
+  },
+  /**
+   * Стан, який виставляє сам бекенд: та сама інструкція вдруге поспіль.
+   * Третій повтор нічого не додасть, тому головна дія тут — не «далі», а вихід
+   * на шлях, який працює завжди: список кроків із довідки.
+   */
+  loop: {
+    key: "loop",
+    tone: "warn",
+    title: "Підказка пішла по колу",
+    hint:
+      "Модель другий раз поспіль пропонує те саме — далі вона це лише повторюватиме. " +
+      "Надійніше пройти решту кроків за довідкою самому; якщо крок уже зроблено, скажіть про це прямо.",
+    primary: { action: ACTION.MANUAL, label: "Перейти до списку кроків" },
+    showStuck: false,
+    showConfirm: true,
     showInstruction: true,
   },
   unclear: {
@@ -59,6 +82,7 @@ const DESCRIPTORS = {
     hint: "Буває на нестандартних вікнах. Можна подивитись ще раз або сказати, що кнопки не видно.",
     primary: { action: ACTION.RETRY, label: "Подивитись ще раз" },
     showStuck: true,
+    showConfirm: true,
     showInstruction: true,
   },
 };

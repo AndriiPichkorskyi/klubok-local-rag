@@ -349,3 +349,48 @@ table.dp-table td.dp-num { text-align: right; font-family: var(--mono); }
   padding: 2px 6px;
   font-size: 11px;
 }
+
+/* --- Осі бенчмарку і ціна прогону. ---------------------------------------- */
+/* Форма мінімальна навмисно: прапорці для перелічуваних осей, одне поле для
+   числових. Ціна прогону стоїть ПІД полями — її читають останньою, перед тим
+   як натиснути «Запустити». */
+
+.dp-axes-block {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dp-axes-head { justify-content: space-between; }
+.dp-axes-head button { padding: 2px 8px; font-size: 11px; }
+
+.dp-axes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px 12px;
+}
+
+.dp-axis { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dp-axis-head { gap: 6px; justify-content: space-between; }
+.dp-axis-head button { padding: 0 6px; font-size: 11px; }
+.dp-axis-name { font-size: 12px; font-weight: 600; }
+.dp-axis-input { padding: 3px 8px; font-size: 12px; font-family: var(--mono); }
+
+/* Підказка осі переноситься, на відміну від dp-op-msg: текст тут довгий і
+   важливіший за компактність (саме звідси людина дізнається про "random"). */
+.dp-axis-hint { font-size: 11px; line-height: 1.35; }
+
+/* Ціна прогону: рядок на кожен вид тестів. */
+.dp-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.dp-plan-row { gap: 8px; font-size: 12px; }
+.dp-plan-name { font-weight: 600; min-width: 130px; }

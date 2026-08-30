@@ -127,9 +127,13 @@ export async function askVision({ prompt, system, schema, image, signal, onProgr
  * інакше оверлей вів би користувача до кнопки, якої на екрані немає.
  *
  * @param {Object|null} parsed - розібрана відповідь моделі.
- * @param {Object} options - {sent: {width, height}, failure: string|null}
+ * Окремо звідси виходить відповідь на пряме питання про ПОПЕРЕДНІЙ крок
+ * (`previousDone`, `previousEvidence`): просування сесії спирається саме на неї.
+ *
+ * @param {Object} options - {sent: {width, height}, failure: string|null,
+ *        allowedStates: string[] — звужений перелік, коли вікно підтвердила ОС}
  */
-export function toStepFields(parsed, { sent, failure = null } = {}) {
+export function toStepFields(parsed, { sent, failure = null, allowedStates = STATES } = {}) {
   const notes = [];
 
   if (!parsed) {
@@ -141,13 +145,27 @@ export function toStepFields(parsed, { sent, failure = null } = {}) {
         : FALLBACK_INSTRUCTION.unclear,
       target: null,
       screenSummary: null,
+      // Модель нічого не сказала — отже, і про попередній крок вона не сказала
+      // нічого. `null` тут означає «невідомо», і це НЕ те саме, що «не виконано»:
+      // просування такий випадок не блокує, інакше збій Ollama вішав би сесію.
+      previousDone: null,
+      previousEvidence: null,
       notes,
     };
   }
 
   let state = String(parsed.state || "").trim();
-  if (!STATES.includes(state)) {
-    notes.push(`невідомий state «${parsed.state}» → unclear`);
+  let coerced = false;
+  if (!allowedStates.includes(state)) {
+    coerced = true;
+    // Стан поза дозволеним переліком. Окремо відзначаємо випадок, коли модель
+    // усе-таки повернула «чи та це програма», хоч ОС уже відповіла на це
+    // питання: вірити тут треба ОС, але й вигадану інструкцію брати не можна.
+    notes.push(
+      STATES.includes(state)
+        ? `стан «${state}» недоступний: вікно вже підтверджено операційною системою → unclear`
+        : `невідомий state «${parsed.state}» → unclear`,
+    );
     state = "unclear";
   }
 
@@ -177,11 +195,29 @@ export function toStepFields(parsed, { sent, failure = null } = {}) {
     target = null;
   }
 
+  // Стан довелося перебити — відповідь суперечлива, і рамці з неї теж віри
+  // немає: та сама відповідь щойно стверджувала те, що ОС спростувала.
+  if (target && coerced) {
+    notes.push("рамку відкинуто: стан довелося перебити, відповідь суперечлива");
+    target = null;
+  }
+
+  // Пряма відповідь на пряме питання «чи виконано попередній крок». Логічного
+  // значення немає (модель не питали або вона його не дала) → null: рішення про
+  // просування ухвалює index.js, і «невідомо» він трактує не як «ні».
+  const previousDone = typeof parsed.previous_done === "boolean" ? parsed.previous_done : null;
+  const previousEvidence = String(parsed.previous_evidence || "").trim() || null;
+  if (previousDone === false && previousEvidence) {
+    notes.push(`модель не бачить виконання попереднього кроку: ${previousEvidence}`);
+  }
+
   return {
     state,
     instruction,
     target,
     screenSummary: String(parsed.screen_summary || "").trim() || null,
+    previousDone,
+    previousEvidence,
     notes,
   };
 }

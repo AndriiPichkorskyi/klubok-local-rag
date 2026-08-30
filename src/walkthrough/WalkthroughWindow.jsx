@@ -9,6 +9,13 @@ import { useCallback, useEffect, useState } from "react";
 import WalkthroughPanel from "./WalkthroughPanel";
 import { readRequest, clearRequest, REQUEST_KEY } from "./session";
 import { overlayHide } from "./tauri";
+import {
+  isHintWindow,
+  restoreWindowPosition,
+  restoreWindowSize,
+  watchWindowPosition,
+  watchWindowSize,
+} from "./windowPosition";
 
 export default function WalkthroughWindow() {
   const [request, setRequest] = useState(() => readRequest());
@@ -22,6 +29,39 @@ export default function WalkthroughWindow() {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Положення вікна. Rust ставить його в кут екрана при створенні; якщо автор
+  // уже посував вікно, повертаємо туди, де він його лишив, і далі стежимо за
+  // переміщенням. Рамки підсвічування це не стосується: її координати рахує
+  // Rust із координат моделі, і зсувати її не можна.
+  useEffect(() => {
+    if (!isHintWindow()) return undefined;
+    let alive = true;
+    let offMove = null;
+    let offResize = null;
+    restoreWindowPosition();
+    watchWindowPosition().then((off) => {
+      if (alive) offMove = off;
+      else off?.();
+    });
+    // Розмір — те саме, що й положення: вікно 440×300 тісне для читання
+    // промптів у режимі діагностики, тож його роблять розтягуваним, а розмір
+    // запам'ятовують. Порядок важливий: спершу вмикаємо розтягування і
+    // повертаємо збережений розмір, і лише потім підписуємось — інакше наше ж
+    // програмне `setSize` перезаписало б збережене значення тим самим числом.
+    restoreWindowSize().then(() => {
+      if (!alive) return;
+      watchWindowSize().then((off) => {
+        if (alive) offResize = off;
+        else off?.();
+      });
+    });
+    return () => {
+      alive = false;
+      offMove?.();
+      offResize?.();
+    };
   }, []);
 
   const close = useCallback(() => {

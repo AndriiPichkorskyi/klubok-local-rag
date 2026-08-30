@@ -6,6 +6,7 @@ import { rpc } from "../ipc";
 import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
+import { BenchmarkPlanSummary } from "./BenchmarkAxesForm";
 
 /**
  * tests.run і tests.runExternal повертають
@@ -31,13 +32,17 @@ function verdict(result) {
   return null;
 }
 
-export default function TestsSection({ ops, run, cancelOp, onFinished }) {
+export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished }) {
   const rag = opState(ops, "tests.run");
   const external = opState(ops, "tests.runExternal");
 
+  // Обидва методи беруть ту саму матрицю, що й повний прогін: осі задаються
+  // у секції «Повний прогін», а сюди приходять уже готовим параметром.
+  // Порожньо = бекенд бере осі з конфіга.
+  const axes = benchmark?.axesParam || null;
   const start = (method, label) =>
     run(method, label, async (ref) => {
-      const result = await rpc(method, {}, ref);
+      const result = await rpc(method, axes ? { axes } : {}, ref);
       onFinished?.();
       return result;
     });
@@ -56,6 +61,7 @@ export default function TestsSection({ ops, run, cancelOp, onFinished }) {
           label="RAG-бенчмарк (tests.run)"
           onClick={() => start("tests.run", "RAG-бенчмарк")}
           onCancel={() => cancelOp?.("tests.run")}
+          disabled={Boolean(benchmark?.blockedFor?.("rag") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(rag)}
         </OpButton>
@@ -65,14 +71,24 @@ export default function TestsSection({ ops, run, cancelOp, onFinished }) {
           label="EXTERNAL-тести (tests.runExternal)"
           onClick={() => start("tests.runExternal", "EXTERNAL-тести")}
           onCancel={() => cancelOp?.("tests.runExternal")}
+          disabled={Boolean(benchmark?.blockedFor?.("external") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(external)}
         </OpButton>
       </div>
 
+      {/* Ціна прогону тут теж: кнопка запускає ту саму матрицю, що й повний прогін. */}
+      {benchmark ? (
+        <BenchmarkPlanSummary
+          benchmark={benchmark}
+          note="Осі цієї матриці задаються у вкладці «Прогін», секція «Повний прогін»; незадане береться з конфіга."
+        />
+      ) : null}
+
       <div className="muted dp-small">
         Обидва методи пишуть JSON-звіт у sidecar/test-reports/ — після завершення список
-        звітів оновлюється автоматично.
+        звітів оновлюється автоматично. EXTERNAL-тести тепер теж ідуть ПО ВСІХ режимах
+        матриці, а не одним фіксованим.
       </div>
     </Section>
   );

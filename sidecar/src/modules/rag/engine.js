@@ -20,9 +20,21 @@ export const SEARCH_MODES = ["vector", "fts", "hybrid"];
  * @param {Function} onProgress - Колбек для оновлення тексту статусу (спінера).
  * @param {string|null} searchMode - Режим пошуку; null = взяти config.rag.searchMode.
  * @param {boolean|null} excludeLocal - Відкинути локальну довідку; null = config.rag.excludeLocalDocs.
+ * @param {Object|null} overrides - Точкове перевизначення осей генерації на ОДИН виклик:
+ *        `{seed, temperature}`. Потрібне бенчмарку з віссю `seed: "random"`: там кожен
+ *        кейс має власне зерно, а `config.rag.seed` — глобальний і спільний для трьох
+ *        паралельних задач (p-limit), тож підміняти його на кожен запит означало б
+ *        гонку і зерно «сусіда» в звіті. Незадане поле = значення з конфіга, тобто
+ *        звичайний шлях користувача не змінюється взагалі.
  * @returns {Promise<{response: string, contextApps: string[], executionTimeMs: number}>}
  */
-export async function processQuery(queryText, onProgress = () => {}, searchMode = null, excludeLocal = null) {
+export async function processQuery(
+  queryText,
+  onProgress = () => {},
+  searchMode = null,
+  excludeLocal = null,
+  overrides = null,
+) {
   const start = performance.now();
 
   // Аргумент має пріоритет над конфігом: панель розробника порівнює режими
@@ -35,6 +47,15 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
   const mode = searchMode ?? config.rag.searchMode;
   const skipLocal =
     typeof excludeLocal === "boolean" ? excludeLocal : config.rag.excludeLocalDocs === true;
+
+  // Осі генерації: аргумент виклику > конфіг. Обидві потрапляють і в запит до
+  // Ollama, і в retrievalStats — щоб той, хто читає результат, бачив, чим саме
+  // його отримано, а не те, що було в конфізі на момент читання.
+  const seed = overrides && overrides.seed !== undefined ? overrides.seed : config.rag.seed;
+  const temperature =
+    overrides && overrides.temperature !== undefined
+      ? overrides.temperature
+      : config.rag.temperature;
 
   let relevantChunks = [];
 
@@ -85,6 +106,10 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
   let retrievalStats = {
     searchMode: mode,
     excludeLocal: skipLocal,
+    // Фактичні осі генерації цього виклику. Для випадкового зерна це ЄДИНЕ
+    // місце, де видно, чим саме отримано відповідь.
+    seed: seed ?? null,
+    temperature: temperature ?? null,
     initialChunks: relevantChunks.length,
     filteredChunks: relevantChunks.length,
     distances: relevantChunks.filter(c => c._distance !== undefined).map(c => c._distance)
@@ -201,8 +226,8 @@ export async function processQuery(queryText, onProgress = () => {}, searchMode 
     systemPrompt,
     {
       systemPromptMode,
-      seed: config.rag.seed,
-      temperature: config.rag.temperature,
+      seed,
+      temperature,
     },
   );
   const rawLlmOutput = ollamaResult.response;

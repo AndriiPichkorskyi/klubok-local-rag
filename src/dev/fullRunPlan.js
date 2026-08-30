@@ -17,10 +17,14 @@ export const PIPELINE_STEPS = [
   { id: "intentVectors", method: "pipeline.vectorizeIntents", label: "Вектори намірів" },
 ];
 
-/** Тести виконуються після пайплайна. За замовчуванням вимкнені. */
+/**
+ * Тести виконуються після пайплайна. За замовчуванням вимкнені.
+ * `kind` — вид бенчмарку в `tests.plan`: за ним крок бере свою ціну прогону
+ * (скільки режимів і скільки це триватиме) і своє попередження про maxModes.
+ */
 export const TEST_STEPS = [
-  { id: "ragTests", method: "tests.run", label: "RAG-бенчмарк" },
-  { id: "externalTests", method: "tests.runExternal", label: "EXTERNAL-тести" },
+  { id: "ragTests", method: "tests.run", label: "RAG-бенчмарк", kind: "rag" },
+  { id: "externalTests", method: "tests.runExternal", label: "EXTERNAL-тести", kind: "external" },
 ];
 
 /** Прапорці за замовчуванням: усі кроки пайплайна, жодного тесту. */
@@ -83,9 +87,11 @@ function vectorSteps(models, configModel) {
 
 /**
  * Побудова плану. `selection` = {steps:{id:bool}, tests:{id:bool}}.
+ * `testParams` — параметри кроків тестування (осі бенчмарку з інтерфейсу);
+ * порожньо = бекенд бере матрицю з конфіга, як і було до появи форми осей.
  * Повертає масив {key, method, params, label, warn} у порядку виконання.
  */
-export function buildPlan(selection, models, configModel) {
+export function buildPlan(selection, models, configModel, testParams = null) {
   const steps = selection?.steps || {};
   const tests = selection?.tests || {};
   const plan = [];
@@ -101,7 +107,12 @@ export function buildPlan(selection, models, configModel) {
 
   for (const step of TEST_STEPS) {
     if (!tests[step.id]) continue;
-    plan.push({ key: `full:${step.id}`, method: step.method, params: {}, label: step.label });
+    plan.push({
+      key: `full:${step.id}`,
+      method: step.method,
+      params: testParams && testParams.axes ? { axes: testParams.axes } : {},
+      label: step.label,
+    });
   }
 
   return plan;

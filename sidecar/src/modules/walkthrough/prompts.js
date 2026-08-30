@@ -1,10 +1,11 @@
+import { config } from "../../config/config.js";
 /**
  * Файл: src/modules/walkthrough/prompts.js
  * Опис: Промпти і схеми відповідей модуля 2.5. Тримаємо їх окремо від логіки
  *       з тієї ж причини, що й modules/rag/prompts.js: промпт — це предмет
  *       експерименту, його правлять частіше за код.
  *
- * Дві речі, заради яких промпт побудовано саме так.
+ * Три речі, заради яких промпт побудовано саме так.
  *
  * 1. СПОЧАТКУ ОПИС, ПОТІМ ВИСНОВОК. Поле `screen_summary` стоїть у схемі
  *    ПЕРШИМ і заповнюється першим (Ollama генерує поля в порядку схеми).
@@ -19,61 +20,115 @@
  *    за `instruction`: краще «спершу відкрийте вікно», ніж рамка навколо
  *    вигаданої кнопки. Прапорець `target_found` відокремлений від `box`
  *    саме для цього: щоб «не знайшов» не вимагало вигадувати координати.
+ *
+ * 4. ПРО ПОПЕРЕДНІЙ КРОК ПИТАЄМО ПРЯМО. Модель, яку питають лише «що робити
+ *    ДАЛІ», дивиться на кожен кадр як на перший, бачить приблизно те саме і
+ *    чесно повторює свій же висновок — так сесія зациклюється. Тому в схемі
+ *    ПЕРЕД усім іншим стоять `previous_done` і `previous_evidence`: модель
+ *    мусить спершу відповісти, чи видно В КАДРІ, що попередню інструкцію
+ *    виконано, і назвати доказ. Просування лічильника кроків спирається саме
+ *    на цю відповідь, а не на здогад.
+ *
+ * 3. МОДЕЛІ НЕ СТАВЛЯТЬ ПИТАНЬ, НА ЯКІ ВЖЕ Є ТОЧНА ВІДПОВІДЬ. Коли ОС через
+ *    `frontmost_app()` підтвердила, що попереду саме потрібна програма, зір
+ *    більше не вирішує «чи та це програма»: і промпт, і `enum` схеми звужені
+ *    до «де елемент і що робити далі». Лишити `wrong_window` та
+ *    `app_not_started` у переліку — означає дозволити повертати їх навмання.
  */
 
 /** Дозволені стани екрана. Той самий перелік, що в docs/contracts/walkthrough.md. */
 export const STATES = ["ready", "wrong_window", "app_not_started", "done", "unclear"];
 
 /**
+ * Звужений перелік станів — для випадку, коли потрібне вікно вже підтверджено
+ * операційною системою. Питання «чи та це програма» тут закрите, тож станів,
+ * які на нього відповідають, модель не бачить узагалі.
+ */
+export const CONFIRMED_STATES = ["ready", "done", "unclear"];
+
+/** Порядок, у якому стани перелічуються моделі. */
+const STATE_ORDER = ["app_not_started", "wrong_window", "ready", "done", "unclear"];
+
+/** Пояснення кожного стану — беруться лише ті, що дозволені в цьому виклику. */
+const STATE_DESCRIPTIONS = {
+  app_not_started:
+    "app_not_started — потрібної програми на екрані немає взагалі (робочий стіл, Finder, вікно іншої програми на весь екран)",
+  wrong_window:
+    "wrong_window — програма є, але попереду не те вікно чи не та вкладка, і крок зараз виконати неможливо",
+  ready: "ready — потрібне вікно видно, і наступний крок можна зробити просто зараз",
+  done: "done — з кадру видно, що мету вже досягнуто",
+  unclear: "unclear — кадр нерозбірливий, або ти не впевнений, що бачиш",
+};
+
+/** Спільні поля рамки. Виносимо, щоб схеми не розходились між собою. */
+const BOX_FIELD = {
+  type: "object",
+  properties: {
+    x: { type: "number" },
+    y: { type: "number" },
+    w: { type: "number" },
+    h: { type: "number" },
+  },
+  required: ["x", "y", "w", "h"],
+};
+
+/**
  * Схема відповіді зору. Структурований вивід Ollama — це заміна власному
  * парсеру: модель обмежена граматикою і не може віддати поле поза схемою.
  * Порядок полів має значення (див. пункт 1 у шапці файла).
+ * @param {string[]} states - дозволені значення `state`.
  */
-export const VISION_STEP_SCHEMA = {
-  type: "object",
-  properties: {
-    screen_summary: { type: "string" },
-    state: { type: "string", enum: STATES },
-    target_found: { type: "boolean" },
-    target_label: { type: "string" },
-    box: {
-      type: "object",
-      properties: {
-        x: { type: "number" },
-        y: { type: "number" },
-        w: { type: "number" },
-        h: { type: "number" },
-      },
-      required: ["x", "y", "w", "h"],
+export function visionStepSchema(states = STATES, { askPrevious = false } = {}) {
+  // Питання про попередній крок стоїть ПЕРШИМ і заповнюється першим: модель
+  // мусить оцінити зміну, перш ніж пропонувати наступну дію (пункт 4 у шапці).
+  const previous = askPrevious
+    ? {
+        previous_done: { type: "boolean" },
+        previous_evidence: { type: "string" },
+      }
+    : {};
+
+  return {
+    type: "object",
+    properties: {
+      ...previous,
+      screen_summary: { type: "string" },
+      state: { type: "string", enum: [...states] },
+      target_found: { type: "boolean" },
+      target_label: { type: "string" },
+      box: BOX_FIELD,
+      confidence: { type: "number" },
+      instruction: { type: "string" },
     },
-    confidence: { type: "number" },
-    instruction: { type: "string" },
-  },
-  required: ["screen_summary", "state", "target_found", "instruction"],
-};
+    required: [
+      ...(askPrevious ? ["previous_done", "previous_evidence"] : []),
+      "screen_summary",
+      "state",
+      "target_found",
+      "instruction",
+    ],
+  };
+}
 
 /** Схема звірки стану для режиму `plan`: інструкцію бере план, зір лише дивиться. */
-export const VISION_VERIFY_SCHEMA = {
-  type: "object",
-  properties: {
-    screen_summary: { type: "string" },
-    state: { type: "string", enum: STATES },
-    target_found: { type: "boolean" },
-    target_label: { type: "string" },
-    box: {
-      type: "object",
-      properties: {
-        x: { type: "number" },
-        y: { type: "number" },
-        w: { type: "number" },
-        h: { type: "number" },
-      },
-      required: ["x", "y", "w", "h"],
+export function visionVerifySchema(states = STATES) {
+  return {
+    type: "object",
+    properties: {
+      screen_summary: { type: "string" },
+      state: { type: "string", enum: [...states] },
+      target_found: { type: "boolean" },
+      target_label: { type: "string" },
+      box: BOX_FIELD,
+      confidence: { type: "number" },
     },
-    confidence: { type: "number" },
-  },
-  required: ["screen_summary", "state", "target_found"],
-};
+    required: ["screen_summary", "state", "target_found"],
+  };
+}
+
+/** Схеми з повним переліком станів — поведінка за замовчуванням. */
+export const VISION_STEP_SCHEMA = visionStepSchema();
+export const VISION_VERIFY_SCHEMA = visionVerifySchema();
 
 /** Схема плану кроків для режиму `plan`. */
 export const PLAN_SCHEMA = {
@@ -94,19 +149,33 @@ export const PLAN_SCHEMA = {
   required: ["steps"],
 };
 
-/** Спільна частина всіх промптів зору: правила чесності. */
-const VISION_SYSTEM = `Ти — асистент, який дивиться на знімок екрана macOS і веде користувача до його мети крок за кроком.
+/**
+ * Спільна частина всіх промптів зору: правила чесності.
+ *
+ * @param {{states?: string[], confirmedApp?: string|null}} options
+ *   `confirmedApp` — назва програми, про яку ОС уже сказала, що вона попереду.
+ *   Тоді питання «чи та це програма» з задачі зору прибирається зовсім.
+ */
+export function visionSystem({ states = STATES, confirmedApp = null } = {}) {
+  // Порядок пояснень фіксований і не залежить від порядку в переліку: промпт
+  // без звуження має лишатися рівно таким, яким був до появи `frontmost`.
+  const lines = STATE_ORDER.filter((state) => states.includes(state));
+  const stateLines = lines
+    .map((state, i) => `- ${STATE_DESCRIPTIONS[state]}${i === lines.length - 1 ? "." : ";"}`)
+    .join("\n");
+
+  const confirmedBlock = confirmedApp
+    ? `\nПрограму «${confirmedApp}» вже відкрито, і саме її вікно зараз активне: це встановила операційна система, а не здогад. Не перевіряй, чи та це програма, і не сумнівайся в цьому — питання закрите. Твоя задача звужена до двох речей: ЗНАЙТИ в кадрі потрібний елемент і сказати, ЩО РОБИТИ ДАЛІ.\n`
+    : "";
+
+  return `Ти — асистент, який дивиться на знімок екрана macOS і веде користувача до його мети крок за кроком.
 
 Ти бачиш РІВНО ОДИН знімок і фрагменти офіційної довідки програми. Довідка описує, як має бути; знімок показує, як є НАСПРАВДІ. Коли вони розходяться, правий знімок.
 
 Найважливіше правило: спочатку опиши, що справді видно в кадрі, і лише потім роби висновок. Якщо елемента, про який говорить довідка, у кадрі немає — так і напиши. Відповідь «я цього не бачу» правильна й очікувана. Вигадана кнопка — груба помилка: користувач шукатиме те, чого не існує, і зупиниться.
-
+${confirmedBlock}
 Поле state важливіше за інструкцію:
-- app_not_started — потрібної програми на екрані немає взагалі (робочий стіл, Finder, вікно іншої програми на весь екран);
-- wrong_window — програма є, але попереду не те вікно чи не та вкладка, і крок зараз виконати неможливо;
-- ready — потрібне вікно видно, і наступний крок можна зробити просто зараз;
-- done — з кадру видно, що мету вже досягнуто;
-- unclear — кадр нерозбірливий, або ти не впевнений, що бачиш.
+${stateLines}
 
 Правила координат:
 - рамку box давай ЛИШЕ для елемента, який ти бачиш у цьому кадрі;
@@ -114,34 +183,88 @@ const VISION_SYSTEM = `Ти — асистент, який дивиться на
 - не знайшов елемента — target_found: false, і рамку не вигадуй.
 
 Інструкція — одне коротке речення українською, у наказовій формі, про ОДНУ дію. Ніяких «потім», «після цього», ніяких списків.`;
+}
+
+/**
+ * Обрізає довідку для vision-промпта. Зображення саме по собі з'їдає більшість
+ * контексту, тож повна стаття туди не влазить: модель має бачити орієнтири, а
+ * не весь текст. Межа налаштовується, бо залежить від моделі й розміру кадру.
+ */
+function trimDocs(text) {
+  if (!text) return text;
+  const limit = Number(config.walkthrough?.maxDocsCharsForVision) || 1200;
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}\n…(довідку скорочено, щоб кадр вмістився в контекст)`;
+}
 
 /**
  * Промпт режиму `vision`: модель сама вирішує, який крок наступний.
  * @param {Object} session - сесія walkthrough.
  * @param {{width: number, height: number}} sent - розмір надісланого кадру.
+ * @param {{confirmedApp?: string|null}} [options] - вікно, підтверджене ОС.
  */
-export function buildVisionStepPrompt(session, sent) {
+export function buildVisionStepPrompt(
+  session,
+  sent,
+  { confirmedApp = null, previousInstruction = null } = {},
+) {
   const history = session.history.length
     ? session.history
         .map((h, i) => `${i + 1}. ${h.instruction} (стан екрана тоді: ${h.state})`)
         .join("\n")
     : "(це перший крок)";
 
+  const confirmedLine = confirmedApp
+    ? `Вікно програми «${confirmedApp}» зараз попереду — це вже перевірено операційною системою.\n`
+    : "";
+
+  // Пряме питання про попередній крок. Без нього модель дивиться на кожен кадр
+  // як на перший і чесно повторює той самий висновок — саме так сесія і
+  // зациклювалась. Прохання «не повторюйся» цього не замінює: воно не змушує
+  // ОЦІНИТИ зміну, а лише просить інших слів.
+  const previousBlock = previousInstruction
+    ? `ПЕРШЕ ПИТАННЯ, і відповісти на нього треба до всього іншого.
+Попередня підказка була: «${previousInstruction}».
+Чи видно НА ЦЬОМУ знімку, що її вже виконано?
+- previous_done: true — лише якщо в кадрі є прямий доказ (з'явилось нове вікно, панель, пункт списку, змінився вигляд кнопки);
+- previous_done: false — якщо екран виглядає так само, як до дії, або доказу немає;
+- previous_evidence: одним реченням назви саме те, що ти бачиш і що це доводить (або чому доказу немає).
+Якщо попередню дію вже виконано — НЕ пропонуй її ще раз, веди до наступної.
+
+`
+    : "";
+
+  // Кроки, які людина прямо назвала виконаними. Її слово остаточне: вона
+  // бачить свій екран, а модель — лише знімок.
+  const confirmedSteps = (session.confirmedSteps || []).length
+    ? `Користувач ПІДТВЕРДИВ, що вже виконав ці дії. Не пропонуй їх знову в жодному формулюванні:
+${session.confirmedSteps.map((text, i) => `${i + 1}. ${text}`).join("\n")}
+
+`
+    : "";
+
   return {
-    system: VISION_SYSTEM,
+    system: visionSystem({
+      states: confirmedApp ? CONFIRMED_STATES : STATES,
+      confirmedApp,
+    }),
     prompt: `Програма, з якою працює користувач: «${session.appName}».
 Мета користувача: «${session.goal}».
 Номер кроку: ${session.stepIndex + 1}.
-
-Кроки, які вже названо раніше (не повторюй їх, веди далі):
+${confirmedLine}
+${previousBlock}${confirmedSteps}Кроки, які вже названо раніше (не повторюй їх, веди далі):
 ${history}
 
 Фрагменти довідки цієї програми:
-${session.docsText || "(довідки для цієї програми в базі немає — спирайся лише на знімок)"}
+${trimDocs(session.docsText) || "(довідки для цієї програми в базі немає — спирайся лише на знімок)"}
 
 Розмір надісланого зображення: ${sent.width}×${sent.height} пікселів.
 
-Подивись на знімок і скажи, що користувачеві зробити ДАЛІ, щоб наблизитись до мети.`,
+${
+  confirmedApp
+    ? "Знайди в кадрі елемент, потрібний для наступної дії, і скажи, що зробити ДАЛІ, щоб наблизитись до мети."
+    : "Подивись на знімок і скажи, що користувачеві зробити ДАЛІ, щоб наблизитись до мети."
+}`,
   };
 }
 
@@ -151,11 +274,14 @@ ${session.docsText || "(довідки для цієї програми в ба�
  * саме припущення попереднього кроку і, якщо елемента справді немає,
  * запропонувати інший шлях (меню замість кнопки на панелі).
  */
-export function buildStuckPrompt(session, sent) {
+export function buildStuckPrompt(session, sent, { confirmedApp = null } = {}) {
   const last = session.history[session.history.length - 1];
 
   return {
-    system: VISION_SYSTEM,
+    system: visionSystem({
+      states: confirmedApp ? CONFIRMED_STATES : STATES,
+      confirmedApp,
+    }),
     prompt: `Програма: «${session.appName}». Мета користувача: «${session.goal}».
 
 Попередня підказка була: «${last ? last.instruction : "(підказки ще не було)"}».
@@ -176,19 +302,27 @@ ${session.docsText || "(довідки для цієї програми в ба�
 /**
  * Промпт звірки стану для режиму `plan`. Інструкцію тут не питаємо взагалі:
  * її вже склала чат-модель із документації, зір лише каже, чи екран той.
+ * Коли вікно підтвердила ОС, зір звіряє тільки видимість елемента.
  */
-export function buildVerifyPrompt(session, sent, planStep) {
+export function buildVerifyPrompt(session, sent, planStep, { confirmedApp = null } = {}) {
+  const task = confirmedApp
+    ? `Твоє завдання — НЕ придумувати крок і НЕ визначати, яка програма попереду (це вже відомо), а лише подивитись, чи видно в кадрі те, про що говорить крок (target_found + рамка).`
+    : `Твоє завдання — НЕ придумувати крок, а звірити екран:
+- чи попереду справді потрібна програма і потрібне вікно (поле state);
+- чи видно в кадрі те, про що говорить крок (target_found + рамка).`;
+
   return {
-    system: VISION_SYSTEM,
+    system: visionSystem({
+      states: confirmedApp ? CONFIRMED_STATES : STATES,
+      confirmedApp,
+    }),
     prompt: `Програма: «${session.appName}». Мета користувача: «${session.goal}».
 
 Користувачеві зараз буде показано підготовлений заздалегідь крок:
 «${planStep.instruction}»
 Очікується, що на екрані видно: «${planStep.expect || planStep.instruction}».
 
-Твоє завдання — НЕ придумувати крок, а звірити екран:
-- чи попереду справді потрібна програма і потрібне вікно (поле state);
-- чи видно в кадрі те, про що говорить крок (target_found + рамка).
+${task}
 
 Якщо не видно — так і скажи, рамку не вигадуй.
 

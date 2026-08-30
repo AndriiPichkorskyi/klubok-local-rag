@@ -30,7 +30,7 @@ async function attempt(label, payload) {
   process.stdout.write(`${label.padEnd(46)}`);
   try {
     const { data } = await axios.post(`${base}/api/generate`, payload, { timeout: 180000 });
-    const text = (data.response || "").replace(/\s+/g, " ").slice(0, 60);
+    const text = (data.response || "").replace(/\s+/g, " ");
     console.log(`OK   ${text}`);
     return true;
   } catch (error) {
@@ -50,7 +50,9 @@ async function main() {
     const found = names.includes(model);
     console.log(`Модель у списку встановлених: ${found ? "так" : "НІ"}`);
     if (!found) {
-      const similar = names.filter((n) => n.includes("vl") || n.includes("vision") || n.includes("llava"));
+      const similar = names.filter(
+        (n) => n.includes("vl") || n.includes("vision") || n.includes("llava"),
+      );
       console.log(`  Схожі назви: ${similar.length ? similar.join(", ") : "жодної"}`);
       console.log(`  Усього моделей: ${names.length}\n`);
     } else {
@@ -66,18 +68,34 @@ async function main() {
   await attempt("1. лише текст, без зображення", { model, prompt, stream: false });
   await attempt("2. + зображення", { model, prompt, images: [TINY_PNG], stream: false });
   await attempt("3. + системний промпт", {
-    model, prompt, images: [TINY_PNG], stream: false, system: "Ти аналізуєш знімки екрана.",
+    model,
+    prompt,
+    images: [TINY_PNG],
+    stream: false,
+    system: "Ти аналізуєш знімки екрана.",
   });
   await attempt("4. + format: json", {
-    model, prompt, images: [TINY_PNG], stream: false, format: "json",
+    model,
+    prompt,
+    images: [TINY_PNG],
+    stream: false,
+    format: "json",
   });
   await attempt("5. + format: схема (як у walkthrough)", {
-    model, prompt, images: [TINY_PNG], stream: false, format: SCHEMA,
+    model,
+    prompt,
+    images: [TINY_PNG],
+    stream: false,
+    format: SCHEMA,
   });
   await attempt("6. + options і keep_alive (повний payload)", {
-    model, prompt, images: [TINY_PNG], stream: false,
+    model,
+    prompt,
+    images: [TINY_PNG],
+    stream: false,
     system: "Ти аналізуєш знімки екрана.",
-    format: SCHEMA, keep_alive: "5m",
+    format: SCHEMA,
+    keep_alive: "5m",
     options: { temperature: 0, num_predict: 400 },
   });
 

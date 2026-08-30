@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDevRuntime } from "./useDevRuntime";
+import { useBenchmarkAxes } from "./useBenchmarkAxes";
 import DevTabs from "./DevTabs";
 import ProgressLog from "./ProgressLog";
 import SidecarSection from "./SidecarSection";
@@ -171,6 +172,11 @@ export default function DevPanel() {
   }, [ops]);
 
   const embedModels = useMemo(() => embedModelsOf(config), [config]);
+
+  // Осі бенчмарку живуть на рівні панелі: форма стоїть у секції прогону, а
+  // кнопки в «Тестуванні» запускають рівно ту саму матрицю. Два незалежні
+  // стани тут означали б, що кнопка запускає не те, що показано поруч.
+  const benchmark = useBenchmarkAxes();
   const onTestsFinished = useCallback(() => setReportsRefresh((value) => value + 1), []);
 
   // Після повного прогону оновлюємо і список звітів, і статистику: саме там
@@ -221,6 +227,7 @@ export default function DevPanel() {
                 note={note}
                 embedModels={embedModels}
                 configModel={config?.embedModelName || null}
+                benchmark={benchmark}
                 onFinished={onFullRunFinished}
               />
               <PipelineSection ops={ops} run={run} cancelOp={cancelOp} embedModels={embedModels} />
@@ -231,7 +238,13 @@ export default function DevPanel() {
             "results",
             <>
               <StatsSection ops={ops} run={run} cancelOp={cancelOp} refreshKey={statsRefresh} />
-              <TestsSection ops={ops} run={run} cancelOp={cancelOp} onFinished={onTestsFinished} />
+              <TestsSection
+                ops={ops}
+                run={run}
+                cancelOp={cancelOp}
+                benchmark={benchmark}
+                onFinished={onTestsFinished}
+              />
               <ReportsSection ops={ops} run={run} cancelOp={cancelOp} refreshKey={reportsRefresh} />
             </>,
           )}

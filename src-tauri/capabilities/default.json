@@ -9,6 +9,10 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-position",
+    "core:window:allow-set-resizable",
+    "core:window:allow-set-size"
   ]
 }

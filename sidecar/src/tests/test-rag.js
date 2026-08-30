@@ -11,10 +11,12 @@ import { renderReportTable } from "../cli/reports.js";
 import { logger } from "../services/logger.service.js";
 import { createReportStream } from "./report-stream.js";
 import {
-  resolveAxes,
-  buildModes,
-  describeMatrix,
+  resolveBenchmarkPlan,
+  assertModeLimit,
+  nextSeedFor,
+  isRandomSeedMode,
   summarizeSeedGroups,
+  summarizeRandomSeedRuns,
   compareAxisPairs,
   summarizeAxisImpact,
 } from "./benchmark-matrix.js";
@@ -34,10 +36,13 @@ import { createHash } from "crypto";
  * всередині живого процесу, і `process.exit` убив би застосунок разом із ним.
  *
  * @param {Function} onProgress - необов'язковий колбек (msg, pct|null).
+ * @param {Object} [options] - `{axes}`: осі, задані ззовні (панель розробника).
+ *        Конфіг лишається джерелом за замовчуванням: те, чого немає в `axes`,
+ *        береться з `rag.benchmark.axes`.
  * @returns {Promise<{ok: boolean, totalCases: number, passed: number,
  *                    failed: number, passRate: number, reportPath: string}>}
  */
-export async function runRagTests(onProgress = () => {}) {
+export async function runRagTests(onProgress = () => {}, options = {}) {
   console.log(pc.bgCyan(pc.black(" ЗАПУСК АВТОМАТИЗОВАНОГО ТЕСТУВАННЯ RAG")));
 
   const status = await ollama.checkAvailability();
@@ -84,25 +89,24 @@ export async function runRagTests(onProgress = () => {}) {
     // Матриця більше не зашита в код: осі беруться з config/pipeline.config.json
     // (rag.benchmark.axes). Типові значення дають ті самі 12 режимів, що й раніше.
     const benchmarkConfig = config.rag.benchmark || {};
-    const axes = resolveAxes(benchmarkConfig);
-    const modes = buildModes(axes, {
-      temperature: config.rag.temperature ?? 0.1,
-      chatModel: config.ollama.chatModel,
-      embedModel: config.embedModelName,
+    // Один резолвер плану на обидва тести і на метод tests.plan: числа, які
+    // панель показала перед запуском, і числа прогону рахує та сама формула.
+    const plan = resolveBenchmarkPlan({
+      benchmark: benchmarkConfig,
+      overrides: options?.axes ?? null,
+      caseCount: TEST_CASES.length,
+      extra: {
+        chatModel: config.ollama.chatModel,
+        embedModel: config.embedModelName,
+      },
     });
-
-    // Запобіжник: повний добуток усіх осей — 36N режимів по 26 кейсів, і
+    // Запобіжник: повний добуток усіх осей — 36·T·N режимів по 26 кейсів, і
     // запустити таке випадково коштує людині ночі. maxModes = 0 — без обмеження.
-    const maxModes = Number(benchmarkConfig.maxModes) || 0;
-    if (maxModes > 0 && modes.length > maxModes) {
-      throw new Error(
-        `Матриця дає ${modes.length} режимів, а rag.benchmark.maxModes = ${maxModes}. ` +
-          `Звузьте осі в config/pipeline.config.json або підніміть maxModes.`,
-      );
-    }
+    assertModeLimit(plan);
+    const { axes, modes } = plan;
 
     // Прогрес рахуємо наскрізно по всіх режимах: панель показує один індикатор.
-    const { lines: matrixLines, totalRuns } = describeMatrix(axes, modes, TEST_CASES.length);
+    const { lines: matrixLines, totalRuns } = plan;
     let doneRuns = 0;
 
     // Масштаб прогону — на екран і в прогрес ДО першого запиту до LLM.
@@ -139,6 +143,9 @@ export async function runRagTests(onProgress = () => {}) {
     // Хеші сирих відповідей LLM: режим → (запит → hash). Потрібні, щоб
     // довести інертність осі побайтовим збігом, а не статистикою.
     const hashesByMode = new Map();
+    // Фактично використані зерна: режим → [seed кожного кейса]. Для осі
+    // seed: "random" це єдиний спосіб потім сказати, ЩО саме прогнали.
+    const seedsByMode = new Map();
 
     // Звіт пишемо на диск ПОСТУПОВО. Раніше всі 12 режимів × усі кейси
     // лежали в пам'яті до останнього рядка, і лише потім JSON.stringify
@@ -193,11 +200,17 @@ export async function runRagTests(onProgress = () => {}) {
       config.rag.enableXmlTags = modeObj.xml;
       config.rag.enableContextReordering = modeObj.reorder;
       config.rag.systemPromptMode = modeObj.systemPrompt;
-      config.rag.seed = modeObj.seed;
-      config.rag.temperature = modeObj.params.temperature;
+      // Вісь seed: "random" не має одного значення на режим — зерно
+      // народжується на КОЖЕН кейс і передається в processQuery окремим
+      // аргументом (глобальний config тут дав би гонку між паралельними
+      // задачами). У самому конфізі на час такого режиму лишається null.
+      config.rag.seed = isRandomSeedMode(modeObj) ? null : modeObj.seed;
+      config.rag.temperature = modeObj.temperature;
 
       const modeHashes = new Map();
       hashesByMode.set(mode, modeHashes);
+      const modeSeeds = [];
+      seedsByMode.set(mode, modeSeeds);
       // Розбивка pass rate по мовах для цього режиму.
       const langTally = createLanguageTally();
 
@@ -215,8 +228,13 @@ export async function runRagTests(onProgress = () => {}) {
       const batchPromises = TEST_CASES.map((test) =>
         limit(async () => {
           const testIndex = testIndexCounter++;
+          // Зерно цього конкретного запиту: значення осі або нове випадкове.
+          const caseSeed = nextSeedFor(modeObj);
           const queryStart = Date.now();
-          const result = await processQuery(test.query, () => {});
+          const result = await processQuery(test.query, () => {}, null, null, {
+            seed: caseSeed,
+            temperature: modeObj.temperature,
+          });
           const queryTime = Date.now() - queryStart;
 
           // Збираємо метрики
@@ -339,10 +357,19 @@ export async function runRagTests(onProgress = () => {}) {
           const { language, languageSource } = caseLanguage.get(test);
           langTally.add(language, isSuccess || isAlternativeSuccess, languageSource === "auto");
 
+          // Фактичне зерно беремо з відповіді движка, а не з наміру: якщо
+          // ланцюжок колись розірветься, у звіті буде видно саме те, що пішло
+          // в Ollama. `seedSource` відрізняє точку осі від випадкового зерна.
+          const usedSeed = result.retrievalStats?.seed ?? caseSeed ?? null;
+          modeSeeds.push(usedSeed);
+
           const resObj = {
             query: test.query,
             language,
             languageSource,
+            seed: usedSeed,
+            seedSource: modeObj.seedKind,
+            temperature: result.retrievalStats?.temperature ?? modeObj.temperature,
             expectedType: test.type,
             expectedApp: test.expectedApp,
             isSuccess: isSuccess || isAlternativeSuccess,
@@ -399,6 +426,11 @@ export async function runRagTests(onProgress = () => {}) {
         failed,
         passRate,
         totalTimeMs: totalTime,
+        // Те саме число, але під однозначною назвою: у EXTERNAL-тесті
+        // `totalTimeMs` історично означає СУМУ тривалостей кейсів, а не
+        // час «від першого до останнього». Оцінка часу прогону (tests.plan)
+        // рахується саме з wallTimeMs, тож обидва тести дають її однаково.
+        wallTimeMs: totalTime,
         avgTps: acc.tpsSum / divisor,
         avgMem: acc.memSum / divisor,
         totalInputTokens: acc.inputTokens,
@@ -432,7 +464,13 @@ export async function runRagTests(onProgress = () => {}) {
     // (крослінгвальний) результат, а не шум у загальному числі.
     const languageBreakdown = summarizeLanguages(modes, summary, guessedLanguageCases);
 
+    // === Прогони на випадковому зерні ===
+    // Окремим блоком, а не серед seedGroups: усереднювати їх можна, називати
+    // режимом-точкою — ні (див. шапку benchmark-matrix.js).
+    const randomSeedRuns = summarizeRandomSeedRuns(modes, summary, seedsByMode);
+
     const footer = { seedGroups, axisComparison, axisImpact, languageBreakdown };
+    if (randomSeedRuns) footer.randomSeedRuns = randomSeedRuns;
     await report.close(footer);
 
     // Вивід таблиці порівняння через спільний рендерер.
@@ -467,6 +505,32 @@ export async function runRagTests(onProgress = () => {}) {
         );
       }
       console.log("-".repeat(101));
+    }
+
+    // Прогони на випадковому зерні друкуються окремою таблицею — саме щоб їх
+    // не сплутали з режимами: у них немає точки, яку можна повторити.
+    if (randomSeedRuns) {
+      console.log(pc.bold("\n🎲 ПРОГОНИ НА ВИПАДКОВОМУ ЗЕРНІ (не точки порівняння):"));
+      console.log("-".repeat(101));
+      console.log(
+        pc.bold("Режим".padEnd(38)) +
+          pc.bold("Кейсів".padEnd(10)) +
+          pc.bold("Різних seed".padEnd(14)) +
+          pc.bold("Pass rate".padEnd(12)) +
+          pc.bold("Приклади seed"),
+      );
+      for (const [name, stat] of Object.entries(randomSeedRuns.modes)) {
+        console.log(
+          name.padEnd(38) +
+            String(stat.cases).padEnd(10) +
+            String(stat.distinctSeeds).padEnd(14) +
+            `${stat.passRate}%`.padEnd(12) +
+            stat.seedSample.join(", ") +
+            (stat.seedsTruncated ? ", …" : ""),
+        );
+      }
+      console.log("-".repeat(101));
+      console.log(pc.gray(`   ${randomSeedRuns.note}`));
     }
 
     // Зведення по осях: скільки кейсів дали ПОБАЙТОВО однаковий вивід між

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { rpc, jobCancel, onProgress, newRef, configGet } from "../ipc";
 import { ACTION } from "./states";
+import { buildEntry } from "./diagnostics";
 import {
   screenCapture,
   launchApp,
@@ -26,25 +27,51 @@ export const DEFAULT_CONFIG = {
   maxStepsPerSession: 12,
   stepSource: "vision",
   visionModel: "",
+  // Скільки чекати після активації цільової програми, поки вона вийде наперед.
+  // `open` повертається раніше, ніж вікно з'явиться на екрані, тож без цієї
+  // паузи знімок застає ще наш інтерфейс. Значення з конфіга
+  // (`walkthrough.activationDelayMs`); 450 мс — з запасом на анімацію Spaces.
+  activationDelayMs: 450,
+  // Блок діагностики у відповіді кроку. Вмикає його бекенд.
+  debug: false,
 };
+
+/** Скільки записів історії сесії тримаємо у вікні. */
+const HISTORY_LIMIT = 40;
+
+/** Пауза, яку можна перервати лише лічильником запусків (див. runRef). */
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+
+/** Пауза активації з конфіга: чуже значення не має вішати вікно на хвилину. */
+export function activationDelay(value, fallback = DEFAULT_CONFIG.activationDelayMs) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(n, 5000);
+}
 
 /** Що саме зараз робимо — від цього залежить текст очікування. */
 export const BUSY = {
   START: "start",
+  ACTIVATE: "activate",
   CAPTURE: "capture",
   STEP: "step",
   STUCK: "stuck",
   LAUNCH: "launch",
   FINISH: "finish",
+  MANUAL: "manual",
+  MODE: "mode",
 };
 
 const BUSY_TEXT = {
   [BUSY.START]: "Готуємо підказку…",
+  [BUSY.ACTIVATE]: "Виводимо програму наперед…",
   [BUSY.CAPTURE]: "Робимо знімок екрана…",
   [BUSY.STEP]: "Дивимось, що зараз на екрані…",
   [BUSY.STUCK]: "Шукаємо той самий елемент інакше…",
   [BUSY.LAUNCH]: "Запускаємо програму…",
   [BUSY.FINISH]: "Закриваємо сесію…",
+  [BUSY.MANUAL]: "Наступний крок зі списку…",
+  [BUSY.MODE]: "Готуємо список кроків із довідки…",
 };
 
 const UNKNOWN_METHOD_RE = /unknown\s*method|невідомий метод|немає методу|method\s+.*\s+not/i;
@@ -103,7 +130,14 @@ export function describeFailure(error, stage = "") {
 
 const IDLE_PROGRESS = { msg: "", pct: null };
 
-export function useWalkthrough(request) {
+/**
+ * @param request завдання сесії
+ * @param options `{debug}` — чи просити в бекенда блок діагностики. Вмикається
+ *        перемикачем «сире» у шапці: `walkthrough.step` приймає явний `debug`,
+ *        і він має перевагу над `config.walkthrough.debug`, тож автор бачить
+ *        сире, не правлячи конфіг.
+ */
+export function useWalkthrough(request, options = {}) {
   const [phase, setPhase] = useState("idle"); // idle | busy | step | error | finished
   const [busyKind, setBusyKind] = useState(null);
   const [step, setStep] = useState(null);
@@ -114,6 +148,14 @@ export function useWalkthrough(request) {
   const [note, setNote] = useState("");
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [frontmost, setFrontmost] = useState(null);
+  const [history, setHistory] = useState([]); // сирі дані всіх кроків сесії
+  // Режим кроків САМЕ ЦІЄЇ сесії. У конфізі лежить лише стартове значення:
+  // перемикач у вікні підказки міняє режим посеред сесії, і джерелом правди
+  // стає те, що відповів бекенд у полі `stepSource`.
+  const [stepSource, setStepSource] = useState(DEFAULT_CONFIG.stepSource);
+  // Скільки разів за сесію вікно справді ходило до зору (кадр + виклик моделі).
+  // У ручному режимі лишається нулем — це і є доказ, що зір не задіяний.
+  const [visionCalls, setVisionCalls] = useState(0);
 
   const runRef = useRef(0); // лічильник запусків: відповідь застарілого виклику ігноруємо
   const activeRef = useRef(false);
@@ -122,6 +164,9 @@ export function useWalkthrough(request) {
   const startedAtRef = useRef(0);
   const sessionIdRef = useRef(null);
   const configRef = useRef(DEFAULT_CONFIG);
+  const stepSourceRef = useRef(DEFAULT_CONFIG.stepSource);
+  const wantDebugRef = useRef(false);
+  wantDebugRef.current = options.debug === true;
 
   // Конфіг читаємо один раз: звідти режим знімка, ліміт очікування і прапорець рамки.
   useEffect(() => {
@@ -133,10 +178,17 @@ export function useWalkthrough(request) {
         const next = {
           ...DEFAULT_CONFIG,
           ...wt,
+          activationDelayMs: activationDelay(wt.activationDelayMs),
+          debug: wt.debug === true,
           visionModel: full.ollama?.visionModel || "",
         };
         configRef.current = next;
         setConfig(next);
+        // Стартове значення режиму. Далі його перебиває відповідь бекенда.
+        if (!sessionIdRef.current) {
+          stepSourceRef.current = next.stepSource;
+          setStepSource(next.stepSource);
+        }
       })
       .catch(() => {
         /* конфіг недоступний — працюємо на значеннях за замовчуванням */
@@ -203,9 +255,23 @@ export function useWalkthrough(request) {
     [settle],
   );
 
+  /**
+   * Запис у історію сесії. Пишемо і вдалий крок, і невдалий: сесія, що впала
+   * на третьому кроці, розповідає авторові більше за успішну.
+   */
+  const pushEntry = useCallback((payload) => {
+    setHistory((list) => [...list, buildEntry(payload)].slice(-HISTORY_LIMIT));
+  }, []);
+
   /** Прийом кроку: однаковий для walkthrough.step і walkthrough.stuck. */
   const acceptStep = useCallback((result) => {
     const safe = result && typeof result === "object" ? result : {};
+    // Режим сесії тримає бекенд: він же будує план і знає, чи перемикання
+    // вдалося. Вікно лише відображає те, що прийшло.
+    if (safe.stepSource === "vision" || safe.stepSource === "plan") {
+      stepSourceRef.current = safe.stepSource;
+      setStepSource(safe.stepSource);
+    }
     setStep(safe);
     setBusyKind(null);
     setPhase("step");
@@ -216,42 +282,198 @@ export function useWalkthrough(request) {
   }, []);
 
   /**
-   * Знімок + виклик кроку. Один шлях на «Далі», «перевірити» і «ще раз»:
-   * різниця лише в підписі кнопки, дія та сама — подивитись на екран зараз.
+   * Один крок цілком. Порядок тут — головне виправлення модуля і прямо
+   * прописаний у контракті («Знімок робиться після активації цільової програми»):
+   *
+   *   активувати цільову програму → дати їй мить вийти наперед → знімок →
+   *   спитати ОС, хто попереду → віддати кадр і frontmost у walkthrough.step.
+   *
+   * Причина: натискання «Далі» в цьому вікні щойно вивело НАШ застосунок на
+   * передній план. Знімок без активації ловить саме його, і модель чесно
+   * повідомляє, що потрібної програми немає, — скільки б вікно не відсували
+   * убік: справа у фокусі, а не в перекритті.
+   *
+   * Один шлях на «Далі», «перевірити», «ще раз» і «запустити»: різниця лише в
+   * підписі кнопки й у назві методу, дія та сама — подивитись на екран зараз.
    */
   const advance = useCallback(
-    async (method = "walkthrough.step", busy = BUSY.STEP) => {
+    async ({
+      method = "walkthrough.step",
+      busy = BUSY.STEP,
+      activateBusy = BUSY.ACTIVATE,
+      // «Я це зробив»: слово людини про попередній крок.
+      userConfirmed = false,
+      // Перемикання режиму просто в цьому виклику; null — лишити як є.
+      stepSource: wantSource = null,
+    } = {}) => {
       const sessionId = sessionIdRef.current;
       if (!sessionId) return;
-      const runId = beginBusy(BUSY.CAPTURE);
+      const cfg = configRef.current;
+      const mode = wantSource || stepSourceRef.current;
+
+      // ── РУЧНИЙ РЕЖИМ ──────────────────────────────────────────────────
+      // Найкоротший шлях у файлі, і це навмисно: ні активації, ні знімка, ні
+      // frontmost, ні очікування моделі — лише наступний пункт списку з
+      // довідки. Саме тому він працює завжди і не має чого ламати на захисті.
+      if (mode === "plan" && method === "walkthrough.step") {
+        const startedAtManual = Date.now();
+        const runId = beginBusy(wantSource === "plan" ? BUSY.MODE : BUSY.MANUAL);
+        const params = { sessionId };
+        if (wantSource) params.stepSource = wantSource;
+        if (userConfirmed) params.userConfirmed = true;
+        if (wantDebugRef.current) params.debug = true;
+        try {
+          const result = await rpc(method, params, clientRefRef.current);
+          if (!settle(runId)) return;
+          pushEntry({
+            method,
+            step: result && typeof result === "object" ? result : null,
+            clientMs: Date.now() - startedAtManual,
+          });
+          acceptStep(result);
+        } catch (err) {
+          pushEntry({
+            method,
+            clientMs: Date.now() - startedAtManual,
+            error: describeFailure(err, "список кроків із довідки"),
+          });
+          fail(runId, err, "список кроків із довідки");
+        }
+        return;
+      }
+
+      const appId = request?.appId || "";
+      const delayMs = activationDelay(cfg.activationDelayMs);
+      const startedAt = Date.now();
+      const runId = beginBusy(appId ? activateBusy : BUSY.CAPTURE);
+      let activation = null;
+
+      // 1. Цільова програма — наперед. Вона вже запущена, тож `launch_app` тут
+      //    працює саме як активація (Rust робить те саме `open`).
+      if (appId) {
+        try {
+          const result = await launchApp(appId);
+          activation = {
+            ok: true,
+            appId,
+            ...(result && typeof result === "object" ? result : {}),
+          };
+        } catch (err) {
+          // Активація не вдалась — крок не зриваємо. Знімок усе одно робимо, а
+          // бекенд за frontmost сам виставить wrong_window: це його робота.
+          activation = { ok: false, appId, error: String(err?.message ?? err) };
+        }
+        if (runRef.current !== runId) return;
+
+        // 2. Мить на вихід наперед: `open` повертається раніше, ніж вікно
+        //    справді з'явиться на екрані.
+        await wait(delayMs);
+        if (runRef.current !== runId) return;
+        setBusyKind(BUSY.CAPTURE);
+        setProgress({ msg: BUSY_TEXT[BUSY.CAPTURE], pct: null });
+      }
+
+      // 3. Знімок — уже з цільовою програмою в кадрі.
       let shot;
       try {
-        shot = await screenCapture(configRef.current.captureMode);
+        shot = await screenCapture(cfg.captureMode);
       } catch (err) {
+        pushEntry({
+          method,
+          activation,
+          activationDelayMs: delayMs,
+          clientMs: Date.now() - startedAt,
+          error: describeFailure(err, "знімок екрана"),
+        });
         fail(runId, err, "знімок екрана");
         return;
       }
       if (runRef.current !== runId) return;
+
+      // 4. Хто попереду НАСПРАВДІ. Це відповідь ОС, а не здогад зору: модель не
+      //    бачила іконок цих програм і відрізнити їх не може, а `frontmost_app`
+      //    знає точно. З цієї відповіді бекенд і виставляє wrong_window.
+      const front = await frontmostApp();
+      if (runRef.current !== runId) return;
+      setFrontmost(front?.name || null);
+
+      const params = { sessionId, screenshotPath: shot.path };
+      // Повернення в режим зору з ручного — тим самим викликом, що й крок.
+      if (wantSource) params.stepSource = wantSource;
+      // Слово людини про попередній крок: бекенд рухає сесію навіть тоді, коли
+      // модель не впевнена. Людина бачить свій екран краще за неї.
+      if (userConfirmed) params.userConfirmed = true;
+      // Контракт дає `frontmost` саме методу walkthrough.step; walkthrough.stuck
+      // приймає лише сесію і кадр, тож туди зайвого не шлемо.
+      const frontmostSent = Boolean(front) && method === "walkthrough.step";
+      if (frontmostSent) {
+        params.frontmost = { name: front.name ?? null, bundleId: front.bundleId ?? null };
+      }
+      // Розгорнутий режим розробника — це і є запит на сире. Блок діагностики
+      // роздуває відповідь, тож просимо його лише тоді, коли його читатимуть.
+      if (wantDebugRef.current) params.debug = true;
+
       setBusyKind(busy);
       setProgress({ msg: BUSY_TEXT[busy] || "", pct: null });
       try {
-        const result = await rpc(
-          method,
-          { sessionId, screenshotPath: shot.path },
-          clientRefRef.current,
-        );
+        const result = await rpc(method, params, clientRefRef.current);
         if (!settle(runId)) return;
+        // Лічильник викликів зору вікна. Рахуємо лише те, за що модель справді
+        // бралась: коли стан визначила ОС із frontmost, зору не було.
+        if (result?.source === "vision" || result?.debug?.visionCalls > 0) {
+          setVisionCalls((n) => n + 1);
+        }
         // Знімок і його метадані тримаємо разом із кроком: без widthPx/heightPx/
         // scaleFactor нормалізовані координати нема з чого переводити в точки екрана.
-        acceptStep(
-          result && typeof result === "object" ? { ...result, capture: shot } : result,
-        );
+        const safe =
+          result && typeof result === "object" ? { ...result, capture: shot } : result;
+        pushEntry({
+          method,
+          step: safe,
+          capture: shot,
+          frontmost: front,
+          frontmostSent,
+          activation,
+          activationDelayMs: delayMs,
+          clientMs: Date.now() - startedAt,
+        });
+        acceptStep(safe);
       } catch (err) {
+        pushEntry({
+          method,
+          capture: shot,
+          frontmost: front,
+          frontmostSent,
+          activation,
+          activationDelayMs: delayMs,
+          clientMs: Date.now() - startedAt,
+          error: describeFailure(err, "аналіз екрана"),
+        });
         fail(runId, err, "аналіз екрана");
       }
     },
-    [acceptStep, beginBusy, fail, settle],
+    [acceptStep, beginBusy, fail, pushEntry, request, settle],
   );
+
+  /**
+   * Перемикач режиму просто посеред сесії — головний запасний шлях вікна.
+   *
+   * Пройдені кроки не втрачаються: сесія на бекенді та сама, `stepIndex` і
+   * історія лишаються, змінюється лише те, звідки береться наступна інструкція.
+   * Перехід у ручний режим одразу показує перший пункт списку, тож натискати
+   * щось іще після перемикання не треба.
+   */
+  const switchMode = useCallback(
+    (next) => {
+      if (next !== "vision" && next !== "plan") return undefined;
+      if (!sessionIdRef.current || next === stepSourceRef.current) return undefined;
+      return advance({ stepSource: next });
+    },
+    [advance],
+  );
+
+  /** «Я це зробив» — останнє слово людини про попередній крок. */
+  const confirmDone = useCallback(() => advance({ userConfirmed: true }), [advance]);
 
   /** Створення сесії і перший крок. */
   const start = useCallback(async () => {
@@ -270,7 +492,12 @@ export function useWalkthrough(request) {
         sessionId: safe.sessionId ?? null,
         appName: safe.appName || request.appName,
         planned: Array.isArray(safe.planned) ? safe.planned : [],
+        stepSource: safe.stepSource || configRef.current.stepSource,
       });
+      if (safe.stepSource === "vision" || safe.stepSource === "plan") {
+        stepSourceRef.current = safe.stepSource;
+        setStepSource(safe.stepSource);
+      }
       if (!sessionIdRef.current) {
         setError(describeFailure(new Error("Бекенд не повернув sessionId"), "створення сесії"));
         setBusyKind(null);
@@ -284,20 +511,17 @@ export function useWalkthrough(request) {
   }, [advance, beginBusy, fail, request, settle]);
 
   /** «Я не бачу цієї кнопки» — головний рятівний шлях сесії. */
-  const stuck = useCallback(() => advance("walkthrough.stuck", BUSY.STUCK), [advance]);
+  const stuck = useCallback(
+    () => advance({ method: "walkthrough.stuck", busy: BUSY.STUCK }),
+    [advance],
+  );
 
-  /** Запуск програми і одразу повторна перевірка екрана. */
-  const launch = useCallback(async () => {
-    const runId = beginBusy(BUSY.LAUNCH);
-    try {
-      await launchApp(request?.appId);
-      if (!settle(runId)) return;
-    } catch (err) {
-      fail(runId, err, "запуск програми");
-      return;
-    }
-    await advance();
-  }, [advance, beginBusy, fail, request, settle]);
+  /**
+   * «Запустити програму». Окремого виклику `launch_app` тут більше немає:
+   * крок сам починається з активації, і другий запуск був би зайвим. Різниця
+   * лише в підписі очікування — людина натиснула саме «запустити».
+   */
+  const launch = useCallback(() => advance({ activateBusy: BUSY.LAUNCH }), [advance]);
 
   /** Закриття сесії: бекенд звільняє ресурси і прибирає знімки з диска. */
   const finish = useCallback(async () => {
@@ -339,6 +563,10 @@ export function useWalkthrough(request) {
           return launch();
         case ACTION.FINISH:
           return finish();
+        case ACTION.CONFIRM:
+          return confirmDone();
+        case ACTION.MANUAL:
+          return switchMode("plan");
         case ACTION.NEXT:
         case ACTION.RECHECK:
         case ACTION.RETRY:
@@ -346,20 +574,8 @@ export function useWalkthrough(request) {
           return advance();
       }
     },
-    [advance, finish, launch],
+    [advance, confirmDone, finish, launch, switchMode],
   );
-
-  // Хто зараз попереду — лише щоб уточнити текст стану wrong_window.
-  useEffect(() => {
-    if (step?.state !== "wrong_window") return;
-    let alive = true;
-    frontmostApp().then((info) => {
-      if (alive && info?.name) setFrontmost(info.name);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [step?.state]);
 
   // Закриття вікна не має лишати сесію і знімки живими на диску.
   useEffect(() => {
@@ -386,11 +602,18 @@ export function useWalkthrough(request) {
     note,
     config,
     frontmost,
+    history,
+    // Режим цієї сесії і скільки разів вікно ходило до зору. Друге потрібне і
+    // діагностиці, і звіту: у ручному режимі число лишається нулем.
+    stepSource,
+    visionCalls,
     start,
     stuck,
     cancel,
     finish,
     retry: () => advance(),
     runAction,
+    switchMode,
+    confirmDone,
   };
 }

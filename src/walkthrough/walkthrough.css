@@ -7,6 +7,11 @@
   flex-direction: column;
   gap: 10px;
   min-height: 100vh;
+  /* Вікно розтягується (вмикає це windowPosition.js, розмір запам'ятовується),
+     але висота панелі завжди дорівнює висоті вікна: усе, що не вміщається,
+     прокручується ВСЕРЕДИНІ блоків — і ніколи не витісняє інструкцію. */
+  max-height: 100vh;
+  overflow: hidden;
   padding: 12px 14px 14px;
   background: var(--bg);
   color: var(--fg);
@@ -14,7 +19,9 @@
 
 /* Той самий компонент, вбудований у головне вікно (запасний шлях). */
 .wt-embedded {
-  min-height: 0;
+  max-height: none;
+  overflow: visible;
+  min-height: 640px;
   max-width: 460px;
   margin-top: 12px;
   border: 1px solid var(--line);
@@ -22,8 +29,41 @@
   background: var(--panel);
 }
 
-/* ── Шапка ──────────────────────────────────────────────────── */
-.wt-head { display: flex; align-items: center; gap: 8px; }
+/* ── Шапка = смуга перетягування ─────────────────────────────── */
+/* Вікно тягне сам Tauri: атрибут data-tauri-drag-region у розмітці. CSS тут
+   лише про вигляд — курсор і те, щоб текст не виділявся під час перетягування.
+   `-webkit-app-region` не вживаємо: це властивість Chromium (Electron), а на
+   macOS Tauri малює у WKWebView, де її немає. */
+.wt-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.wt-head[data-tauri-drag-region] {
+  cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wt-head[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+/* Кнопки на смузі перетягуються бути не мають — і натискаються як завжди. */
+.wt-head button {
+  cursor: pointer;
+}
+
+/* Видима ручка: без неї нізвідки здогадатись, що вікно можна посунути. */
+.wt-grip {
+  flex: none;
+  width: 14px;
+  height: 10px;
+  color: var(--muted);
+  opacity: 0.6;
+  background-image: radial-gradient(currentColor 1px, transparent 1.2px);
+  background-size: 4px 4px;
+  background-position: 1px 1px;
+}
 .wt-app {
   flex: 1;
   min-width: 0;
@@ -32,14 +72,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.wt-chip {
-  font-size: 10px;
-  letter-spacing: .04em;
-  padding: 2px 6px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
 }
 .wt-close {
   flex: none;
@@ -50,24 +82,51 @@
   background: transparent;
   border-color: transparent;
 }
-.wt-close:hover { color: var(--fg); }
+.wt-close:hover {
+  color: var(--fg);
+}
+
+/* Перемикач режиму розробника. Тихий: щодня він не потрібен. */
+.wt-dev {
+  flex: none;
+  padding: 2px 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--muted);
+  background: transparent;
+}
+.wt-dev[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 /* ── Де ми в послідовності ──────────────────────────────────── */
-.wt-track { display: flex; align-items: center; gap: 8px; }
+.wt-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .wt-track-label {
   font-size: 11px;
-  letter-spacing: .04em;
+  letter-spacing: 0.04em;
   color: var(--muted);
   white-space: nowrap;
 }
-.wt-track-bar { display: flex; flex: 1; gap: 3px; }
+.wt-track-bar {
+  display: flex;
+  flex: 1;
+  gap: 3px;
+}
 .wt-seg {
   flex: 1;
   height: 3px;
   border-radius: 999px;
   background: var(--line);
 }
-.wt-seg[data-done="true"] { background: var(--accent); }
+.wt-seg[data-done="true"] {
+  background: var(--accent);
+}
 /* План невідомий: показуємо один нейтральний штрих, а не вигаданий знаменник. */
 .wt-track-open {
   flex: 1;
@@ -77,15 +136,33 @@
 }
 
 /* ── Крок ───────────────────────────────────────────────────── */
-.wt-body { display: flex; flex-direction: column; gap: 10px; }
-.wt-step { transition: opacity 160ms ease; }
+.wt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wt-step {
+  transition: opacity 160ms ease;
+}
 /* Чекаємо на зір — крок притлумлений, але видимий: вікно живе, а не зависло. */
-.wt-step[data-dim="true"] { opacity: .45; }
+.wt-step[data-dim="true"] {
+  opacity: 0.45;
+}
 
-.wt-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
-.wt[data-tone="warn"] .wt-title { color: var(--warn); }
-.wt[data-tone="done"] .wt-title { color: var(--ok); }
-.wt[data-tone="unsure"] .wt-title { color: var(--muted); }
+.wt-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.wt[data-tone="warn"] .wt-title {
+  color: var(--warn);
+}
+.wt[data-tone="done"] .wt-title {
+  color: var(--ok);
+}
+.wt[data-tone="unsure"] .wt-title {
+  color: var(--muted);
+}
 
 .wt-instruction {
   margin: 0;
@@ -94,8 +171,16 @@
   font-weight: 500;
   letter-spacing: -0.2px;
 }
-.wt-target { margin: 6px 0 0; font-size: 12px; color: var(--accent); }
-.wt-hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.wt-target {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+.wt-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
 .wt-detail {
   margin: 6px 0 0;
   font-family: var(--mono);
@@ -103,16 +188,44 @@
   color: var(--muted);
   word-break: break-word;
 }
-.wt-note { margin: 0; font-size: 12px; color: var(--warn); }
+.wt-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warn);
+}
 
 /* ── Очікування зору ────────────────────────────────────────── */
-.wt-wait { display: flex; flex-direction: column; gap: 6px; }
-.wt-wait-row { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
-.wt-wait-text { font-size: 13px; }
-.wt-wait-time { font-size: 12px; color: var(--muted); font-family: var(--mono); }
-.wt-wait-why { margin: 0; font-size: 11px; color: var(--muted); }
+.wt-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.wt-wait-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  justify-content: space-between;
+}
+.wt-wait-text {
+  font-size: 13px;
+}
+.wt-wait-time {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.wt-wait-why {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
 
-.wt-bar { height: 3px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.wt-bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
 .wt-bar-fill {
   height: 100%;
   width: 35%;
@@ -120,17 +233,76 @@
   animation: wt-slide 1.3s ease-in-out infinite;
 }
 @keyframes wt-slide {
-  0% { margin-left: -35%; }
-  100% { margin-left: 100%; }
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .wt-bar-fill { animation: none; width: 100%; opacity: .4; }
-  .wt-step { transition: none; }
+  .wt-bar-fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+  .wt-step {
+    transition: none;
+  }
+}
+
+/* Перемикач режиму кроків. Виглядає як напис, а не як кнопка дії: він поруч із
+   назвою програми і показує СТАН («зараз веде зір» / «зараз список із довідки»),
+   а натискання лише міняє цей стан. Ручний режим підкреслено кольором ok —
+   це шлях, який працює завжди. */
+.wt-mode {
+  flex: none;
+  padding: 2px 8px;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.wt-mode[data-mode="plan"] {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.wt-mode:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.wt-mode-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Орієнтир із довідки в ручному режимі: що має бути видно на екрані. */
+.wt-expect {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Відповідь моделі на пряме питання про попередній крок. Показуємо лише
+   «не бачу виконання» — і тоном попередження, бо це причина, чому сесія стоїть. */
+.wt-progress {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--warn);
 }
 
 /* ── Дії ────────────────────────────────────────────────────── */
-.wt-actions { display: flex; gap: 8px; align-items: center; }
-.wt-btn { font: inherit; }
+.wt-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.wt-btn {
+  font: inherit;
+}
 .wt-btn-main {
   flex: 1;
   padding: 9px 12px;
@@ -139,7 +311,21 @@
   border-color: var(--accent);
   color: var(--accent);
 }
-.wt-btn-quiet { font-size: 13px; color: var(--muted); }
+.wt-btn-quiet {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* «Я це зробив» — слово людини проти невпевненості моделі. Поруч із головною
+   дією і такого ж розміру: це рівноправний вихід, а не виняток. */
+.wt-btn-confirm {
+  flex: none;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--ok);
+  border-color: var(--ok);
+  background: transparent;
+}
 
 /* Кнопка порятунку сесії. Тиха за кольором, але на видноті й на всю ширину:
    ховати її означало б лишити людину сам на сам з помилкою моделі. */
@@ -153,9 +339,159 @@
   background: transparent;
 }
 
-.wt-failure { display: flex; flex-direction: column; }
-.wt-failure .wt-actions { margin-top: 10px; }
+.wt-failure {
+  display: flex;
+  flex-direction: column;
+}
+.wt-failure .wt-actions {
+  margin-top: 10px;
+}
 
 /* ── Запуск із результату пошуку ────────────────────────────── */
-.wt-launch { margin-top: 14px; }
-.wt-launch-note { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.wt-launch {
+  margin-top: 14px;
+}
+.wt-launch-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Режим розробника ───────────────────────────────────────── */
+/* Інструмент налагодження: щільно, моноширинно, з власною прокруткою, щоб
+   сирі дані ніколи не витісняли інструкцію з маленького вікна. */
+#wt-debug {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.wt-dbg {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.wt-embedded .wt-dbg {
+  max-height: 320px;
+}
+
+.wt-dbg-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.wt-dbg-title {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.wt-dbg-count {
+  flex: 1;
+  color: var(--muted);
+}
+.wt-dbg-copy {
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.wt-dbg-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.wt-dbg-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Пари «поле → значення». Довгі шляхи переносяться, а не ріжуться. */
+.wt-dbg-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wt-dbg-row {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 8px;
+}
+.wt-dbg-row dt {
+  color: var(--muted);
+}
+.wt-dbg-row dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.wt-dbg-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wt-dbg-block-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wt-dbg-block-title {
+  flex: 1;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.wt-dbg-pre {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.wt-dbg-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wt-dbg-hrow {
+  display: grid;
+  grid-template-columns: 34px 1fr 56px 56px;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-align: left;
+  color: var(--fg);
+  background: var(--bg);
+}
+.wt-dbg-hrow[aria-current="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.wt-dbg-hn {
+  color: var(--muted);
+}
+.wt-dbg-hmeta {
+  color: var(--muted);
+}

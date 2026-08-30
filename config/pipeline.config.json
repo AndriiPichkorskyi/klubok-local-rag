@@ -1,10 +1,7 @@
 {
   "_опис": "Єдиний конфіг усього проєкта. Читається sidecar/src/config/config.js та Rust-частиною. Змінюйте тут, а не в коді.",
   "embedModelName": "qwen3-embedding:0.6b",
-  "_embedModelName_варіанти": [
-    "qwen3-embedding:0.6b",
-    "qwen3-embedding:4b"
-  ],
+  "_embedModelName_варіанти": ["qwen3-embedding:0.6b", "qwen3-embedding:4b"],
   "rpc": {
     "host": "127.0.0.1",
     "port": 17817,
@@ -35,20 +32,12 @@
   "rag": {
     "topK": 15,
     "searchMode": "hybrid",
-    "_searchMode_варіанти": [
-      "vector",
-      "fts",
-      "hybrid"
-    ],
+    "_searchMode_варіанти": ["vector", "fts", "hybrid"],
     "enableXmlTags": true,
     "enableContextReordering": true,
     "enableJsonFormat": true,
     "systemPromptMode": "system",
-    "_systemPromptMode_варіанти": [
-      "system",
-      "inline",
-      "none"
-    ],
+    "_systemPromptMode_варіанти": ["system", "inline", "none"],
     "_systemPromptMode_коментар": "Куди йде системний текст класифікатора. system = поле system запиту до Ollama (як було завжди); inline = той самий текст на початку основного промпта, поле system не надсилається; none = тексту немає ніде. Розділяє два питання: чи важливий канал доставки і чи важливий сам текст.",
     "seed": 42,
     "_seed_коментар": "Зерно генерації. null = не надсилати seed узагалі, тоді кожен виклик дає інший зразок.",
@@ -58,125 +47,84 @@
     "benchmark": {
       "_опис": "Матриця режимів RAG-бенчмарку. Режими = ПОВНИЙ ДОБУТОК осей нижче. Щоб зафіксувати вісь — лишіть у ній одне значення; щоб варіювати — додайте кілька. Прогонів LLM = (добуток довжин осей) × кількість тестових кейсів.",
       "axes": {
-        "search": [
-          "vector",
-          "fts",
-          "hybrid"
-        ],
-        "xml": [
-          false,
-          true
-        ],
-        "reorder": [
-          false,
-          true
-        ],
-        "systemPrompt": [
-          "system"
-        ],
-        "seed": [
-          42
-        ]
+        "search": ["hybrid"],
+        "xml": [false, true],
+        "reorder": [false, true],
+        "systemPrompt": ["system", "inline", "none"],
+        "seed": [1, 2, 3],
+        "temperature": [0.1]
       },
       "_axes_варіанти": {
-        "search": [
-          "vector",
-          "fts",
-          "hybrid"
-        ],
-        "xml": [
-          false,
-          true
-        ],
-        "reorder": [
-          false,
-          true
-        ],
-        "systemPrompt": [
-          "system",
-          "inline",
-          "none"
-        ],
-        "seed": "список чисел; null = без seed. Кілька значень = кілька прогонів ТОГО САМОГО режиму, звіт покаже мінімум/максимум/σ pass rate"
+        "search": ["vector", "fts", "hybrid"],
+        "xml": [false, true],
+        "reorder": [false, true],
+        "systemPrompt": ["system", "inline", "none"],
+        "seed": "список чисел; null = без seed; \"random\" = НОВЕ випадкове зерно на кожен запит. Кілька чисел = кілька прогонів ТОГО САМОГО режиму, звіт покаже мінімум/максимум/σ pass rate",
+        "temperature": "список чисел 0..2. Досі була константою 0.1 і віссю не була взагалі"
       },
+      "_seed_random_коментар": "\"random\" — це ІНШИЙ експеримент, ніж перелік чисел: він міряє власну нестабільність системи, а не порівнює конкретні точки. Такий режим не потрапляє ні в seedGroups, ні в порівняння осей (axisComparison), а живе в окремому блоці звіту randomSeedRuns; фактичне зерно кожного кейса лежить у полі seed його результату — без нього прогін не відтворити.",
       "_дефолт_коментар": "Осі вище відтворюють поведінку до появи матриці: 3 × 2 × 2 = 12 режимів, systemPrompt system, seed 42. Назви режимів теж старі (vector, vector+XML, ...), тож старі звіти лишаються порівнюваними. Щойно вісь systemPrompt або seed починає варіювати, до назви додається суфікс |sp=... / |seed=...",
       "_приклад_чи_винен_системний_промпт": {
-        "search": [
-          "hybrid"
-        ],
-        "xml": [
-          false,
-          true
-        ],
-        "reorder": [
-          false
-        ],
-        "systemPrompt": [
-          "system",
-          "inline",
-          "none"
-        ],
-        "seed": [
-          42
-        ]
+        "search": ["hybrid"],
+        "xml": [false, true],
+        "reorder": [false],
+        "systemPrompt": ["system", "inline", "none"],
+        "seed": [42]
       },
       "_приклад_чи_винен_seed": {
-        "search": [
-          "hybrid"
-        ],
-        "xml": [
-          false,
-          true
-        ],
-        "reorder": [
-          false
-        ],
-        "systemPrompt": [
-          "system"
-        ],
-        "seed": [
-          1,
-          2,
-          3,
-          4,
-          5
-        ]
+        "search": ["hybrid"],
+        "xml": [false, true],
+        "reorder": [false],
+        "systemPrompt": ["system"],
+        "seed": [1, 2, 3, 4, 5]
       },
-      "maxModes": 0,
-      "_maxModes_коментар": "Запобіжник від випадкового запуску всієї матриці (3 × 2 × 2 × 3 × N seed = 36N режимів). 0 = без обмеження; якщо більше — прогін не стартує з поясненням."
+      "_приклад_чи_винна_температура": {
+        "search": ["hybrid"],
+        "xml": [true],
+        "reorder": [true],
+        "systemPrompt": ["system"],
+        "seed": [42],
+        "temperature": [0, 0.1, 0.5, 1]
+      },
+      "_приклад_наскільки_система_нестабільна": {
+        "search": ["hybrid"],
+        "xml": [true],
+        "reorder": [true],
+        "systemPrompt": ["system"],
+        "seed": ["random"],
+        "temperature": [0.1]
+      },
+      "maxModes": 36,
+      "_maxModes_коментар": "Запобіжник від випадкового запуску всієї матриці (3 × 2 × 2 × 3 × T темп × N seed). 0 = без обмеження; якщо режимів більше — прогін не стартує, а панель показує це ще до запуску. 36 = нічний прогін, який уже робився; більше — свідоме рішення, і тоді число тут піднімають руками. Осі з панелі розробника рахуються цим самим запобіжником.",
+      "_maxModes_увага": "Той самий ліміт діє і на EXTERNAL-тести, а там 153 кейси: 36 режимів — це вже ≈5500 запитів до LLM. Очікуваний час панель показує до старту."
     }
   },
   "bootstrap": {
-    "requiredModels": [
-      "qwen3:1.7b",
-      "qwen3-embedding:0.6b"
-    ],
-    "optionalModels": [
-      "qwen3-embedding:4b",
-      "qwen2.5vl:3b"
-    ],
+    "requiredModels": ["qwen3:1.7b", "qwen3-embedding:0.6b"],
+    "optionalModels": ["qwen3-embedding:4b", "qwen2.5vl:3b"],
     "autoPull": false,
     "_autoPull_коментар": "true = завантажувати відсутні моделі автоматично при першому запуску"
   },
   "walkthrough": {
     "enableScreenAnalysis": true,
     "captureMode": "window",
-    "_captureMode_варіанти": [
-      "window",
-      "fullscreen"
-    ],
+    "_captureMode_варіанти": ["window", "fullscreen"],
     "screenshotDir": "./sidecar/data/screenshots",
     "maxStepsPerSession": 12,
     "enabled": true,
     "stepSource": "vision",
-    "_stepSource_варіанти": [
-      "vision",
-      "plan"
-    ],
+    "_stepSource_варіанти": ["vision", "plan"],
+    "_stepSource_коментар": "vision — модель веде наживо по знімку. plan — РУЧНИЙ режим: список кроків один раз готує чат-модель із довідки, далі користувач іде сам, зір не викликається взагалі. Це стартове значення; посеред сесії режим перемикається кнопкою у вікні підказки (walkthrough.step, параметр stepSource).",
+    "planVerify": false,
+    "_planVerify_коментар": "Чи звіряти екран зором у режимі plan. Вимкнено: сенс ручного режиму саме в тому, що він не залежить від моделі й не змушує чекати. Увімкнення повертає старий шлях «план веде, зір звіряє кадр» — для порівняння режимів в експерименті.",
     "enableHighlight": false,
     "_enableHighlight_коментар": "Рамка поверх екрана. Вимкнено: спершу віконце збоку, підсвічування як другий етап.",
     "maxImageWidth": 1280,
     "_maxImageWidth_коментар": "Знімок зменшується до цієї ширини перед надсиланням у vision-модель.",
-    "visionTimeoutSec": 120
+    "visionTimeoutSec": 120,
+    "activationDelayMs": 450,
+    "_activationDelayMs_коментар": "Пауза після активації цільової програми і до знімка: `open` повертається раніше, ніж вікно вийде наперед. Менше ~250 мс — кадр ловить наш застосунок.",
+    "debug": false,
+    "_debug_коментар": "Режим розробника: walkthrough.step і walkthrough.stuck додають блок debug (сира відповідь моделі, промпт, кадр, як визначено стан)."
   }
 }

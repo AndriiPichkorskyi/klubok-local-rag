@@ -6,10 +6,31 @@
  *   3) під час очікування зору попередній крок ЛИШАЄТЬСЯ на екрані, а внизу
  *      йде смужка з часом і кнопкою «Скасувати»: порожнеча читалась би як зависання.
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWalkthrough } from "./useWalkthrough";
 import { describeState } from "./states";
+import DebugPanel from "./DebugPanel";
+import { DRAG_REGION, NO_DRAG } from "./windowPosition";
 import "./walkthrough.css";
+
+/** Чи розгорнуто режим розробника — пам'ятаємо між сесіями, як і положення. */
+const DEBUG_OPEN_KEY = "walkthrough.debugOpen";
+
+function readDebugOpen() {
+  try {
+    return localStorage.getItem(DEBUG_OPEN_KEY) === "1";
+  } catch {
+    return false; // сховища немає — за замовчуванням згорнуто
+  }
+}
+
+function writeDebugOpen(open) {
+  try {
+    localStorage.setItem(DEBUG_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    /* нема де запам'ятати — переживемо */
+  }
+}
 
 /** «12,3 с» — кома, бо інтерфейс український. */
 const seconds = (ms) => `${(Math.max(0, ms) / 1000).toFixed(1).replace(".", ",")} с`;
@@ -27,8 +48,11 @@ function humanStep(stepIndex) {
 }
 
 /** Смужка послідовності: скільки позаду, скільки лишилось. */
-function StepTrack({ stepIndex, totalSteps }) {
-  const current = humanStep(stepIndex);
+function StepTrack({ stepIndex, totalSteps, planIndex }) {
+  // У ручному режимі позиція в списку довідки чесніша за наскрізний лічильник:
+  // після перемикання посеред сесії `stepIndex` уже великий, а список читається
+  // з першого пункту, і «крок 7 з 3» не сказало б людині нічого.
+  const current = Number.isFinite(planIndex) ? planIndex + 1 : humanStep(stepIndex);
   const total = Number.isFinite(totalSteps) && totalSteps > 0 ? totalSteps : null;
 
   if (!total) {
@@ -107,8 +131,17 @@ function FailureView({ error, onRetry, onClose }) {
 }
 
 export default function WalkthroughPanel({ request, embedded = false, onClose }) {
-  const wt = useWalkthrough(request);
+  const [debugOpen, setDebugOpen] = useState(readDebugOpen);
+  // Перемикач «сире» вмикає не лише панель: із ним кожен крок просить у бекенда
+  // блок діагностики явно (`debug: true`), і конфіг для цього чіпати не треба.
+  const wt = useWalkthrough(request, { debug: debugOpen });
   const { phase, step, error, config } = wt;
+
+  // Смуга заголовка тягне вікно. Атрибут ставимо лише в окремому вікні: у
+  // вбудованому вигляді ця ж панель поїхала б разом із головним вікном.
+  const dragProps = embedded
+    ? {}
+    : { "data-tauri-drag-region": DRAG_REGION, title: "Потягніть, щоб перемістити вікно" };
 
   // Сесія починається сама: вікно відкрили саме заради неї.
   useEffect(() => {
@@ -119,15 +152,30 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
   const descriptor = useMemo(() => (step ? describeState(step.state) : null), [step]);
   const appName = wt.session?.appName || request?.appName || "";
   const busy = phase === "busy";
+  /** Ручний режим: кроки зі списку довідки, зір не задіяний узагалі. */
+  const manual = wt.stepSource === "plan";
+  /** Що модель відповіла про ПОПЕРЕДНІЙ крок. null — її про це не питали. */
+  const progress = step?.progress || null;
 
   const close = () => {
     wt.finish();
     onClose?.();
   };
 
+  const toggleDebug = () => {
+    setDebugOpen((open) => {
+      writeDebugOpen(!open);
+      return !open;
+    });
+  };
+
   if (!request) {
     return (
       <section className={embedded ? "wt wt-embedded" : "wt"}>
+        <header className="wt-head" {...dragProps}>
+          {embedded ? null : <span className="wt-grip" aria-hidden="true" />}
+          <span className="wt-app">Підказка</span>
+        </header>
         <div className="wt-failure">
           <h1 className="wt-title">Немає що показувати</h1>
           <p className="wt-hint">
@@ -147,14 +195,48 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
       data-state={step?.state || ""}
       aria-label="Покрокова підказка"
     >
-      <header className="wt-head">
+      {/* Смуга заголовка: за неї вікно тягнеться (data-tauri-drag-region).
+          Кнопки на ній лишаються натискними — скрипт Tauri сам не тягне вікно
+          за клікабельні елементи, а ми ще й вимикаємо перетягування явно. */}
+      <header className="wt-head" {...dragProps}>
+        {embedded ? null : <span className="wt-grip" aria-hidden="true" />}
         <span className="wt-app" title={appName}>
           {appName || "Підказка"}
         </span>
-        {step?.source === "plan" ? <span className="wt-chip">за планом</span> : null}
+        {/* Перемикач режиму САМЕ ТУТ, а не лише в конфізі: коли зір застряг,
+            перемикатись треба посеред сесії, а не перезапускати її з правкою
+            файла. Пройдені кроки при цьому лишаються — сесія на бекенді та сама. */}
+        <button
+          type="button"
+          className="wt-mode"
+          data-mode={manual ? "plan" : "vision"}
+          data-tauri-drag-region={NO_DRAG}
+          aria-pressed={manual}
+          disabled={busy || !wt.session}
+          title={
+            manual
+              ? "Зараз кроки беруться зі списку, складеного з довідки. Повернутись до ведення зором."
+              : "Зараз кроки дає модель зору. Перейти на список кроків із довідки: без очікування і без здогадів."
+          }
+          onClick={() => wt.switchMode(manual ? "vision" : "plan")}
+        >
+          {manual ? "за довідкою" : "зір"}
+        </button>
+        <button
+          type="button"
+          className="wt-dev"
+          data-tauri-drag-region={NO_DRAG}
+          aria-expanded={debugOpen}
+          aria-controls="wt-debug"
+          title="Режим розробника: сирі дані кроку"
+          onClick={toggleDebug}
+        >
+          {debugOpen ? "сире ▾" : "сире ▸"}
+        </button>
         <button
           type="button"
           className="wt-close"
+          data-tauri-drag-region={NO_DRAG}
           aria-label="Завершити підказку"
           onClick={close}
         >
@@ -162,7 +244,13 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
         </button>
       </header>
 
-      {step ? <StepTrack stepIndex={step.stepIndex} totalSteps={step.totalSteps} /> : null}
+      {step ? (
+        <StepTrack
+          stepIndex={step.stepIndex}
+          totalSteps={step.totalSteps}
+          planIndex={step.planIndex}
+        />
+      ) : null}
 
       {phase === "error" && error ? (
         <FailureView error={error} onRetry={() => (wt.session ? wt.retry() : wt.start())} onClose={close} />
@@ -186,7 +274,19 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
               {step.target?.label ? (
                 <p className="wt-target">Шукайте: {step.target.label}</p>
               ) : null}
+              {/* Ручний режим бере це з довідки: орієнтир замість рамки, бо
+                  на екран у цьому режимі ніхто не дивиться. */}
+              {step.expect ? <p className="wt-expect">Має бути видно: {step.expect}</p> : null}
               {descriptor.hint ? <p className="wt-hint">{descriptor.hint}</p> : null}
+              {/* Пряма відповідь моделі на пряме питання про попередній крок.
+                  Показуємо лише «не бачу виконання»: підтверджене просування і
+                  так видно з того, що інструкція змінилась. */}
+              {progress?.done === false ? (
+                <p className="wt-progress" data-done="false">
+                  Модель не бачить, що попередній крок виконано
+                  {progress.note ? `: ${progress.note}` : "."}
+                </p>
+              ) : null}
               {step.state === "wrong_window" && wt.frontmost ? (
                 <p className="wt-hint">Зараз попереду: {wt.frontmost}.</p>
               ) : null}
@@ -195,6 +295,15 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
 
           {!step && !busy ? <p className="wt-hint">Готуємо підказку…</p> : null}
           {wt.note ? <p className="wt-note">{wt.note}</p> : null}
+
+          {/* Скільки разів вікно ходило до зору. У ручному режимі — нуль, і це
+              головне число цього шляху, тому воно на видноті, а не в діагностиці. */}
+          {manual ? (
+            <p className="wt-mode-note">
+              Кроки зі списку, складеного з довідки. Зір не задіяний
+              {wt.visionCalls > 0 ? `: за сесію ${wt.visionCalls} звернень до моделі, усі до перемикання` : " жодного разу за цю сесію"}.
+            </p>
+          ) : null}
 
           {busy ? (
             <WaitStrip
@@ -216,6 +325,20 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
                   {descriptor.primary.label}
                 </button>
               ) : null}
+              {/* Останнє слово людини. Вона дивиться на свій екран, а модель —
+                  на знімок 1280 пікселів завширшки: коли вони розходяться,
+                  права людина, і сесія рухається за нею. У ручному режимі
+                  кнопки немає — там кожне «далі» і є підтвердженням. */}
+              {descriptor?.showConfirm && !manual ? (
+                <button
+                  type="button"
+                  className="wt-btn wt-btn-confirm"
+                  title="Модель не бачить змін, але ви знаєте, що крок зроблено — сесія піде далі"
+                  onClick={wt.confirmDone}
+                >
+                  Я це зробив
+                </button>
+              ) : null}
               {wt.note && !step ? (
                 <button type="button" className="wt-btn wt-btn-quiet" onClick={() => wt.start()}>
                   Спробувати ще раз
@@ -226,11 +349,24 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
 
           {/* Головний спосіб урятувати сесію, коли модель показала не те.
               Тому він на видноті, а не сховано в меню. */}
-          {descriptor?.showStuck && !busy ? (
+          {descriptor?.showStuck && !busy && !manual ? (
             <button type="button" className="wt-btn wt-btn-stuck" onClick={wt.stuck}>
               Я не бачу цієї кнопки
             </button>
           ) : null}
+        </div>
+      ) : null}
+
+      {/* Поза гілками фаз навмисно: сирі дані потрібні саме тоді, коли крок
+          не вийшов, і після завершення сесії — щоб було що прочитати. */}
+      {debugOpen ? (
+        <div id="wt-debug">
+          <DebugPanel
+            history={wt.history}
+            config={{ ...config, stepSource: wt.stepSource }}
+            request={request}
+            asked
+          />
         </div>
       ) : null}
     </section>

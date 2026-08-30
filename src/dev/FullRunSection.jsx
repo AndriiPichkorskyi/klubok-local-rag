@@ -15,6 +15,7 @@ import { opState } from "./useDevRuntime";
 import { useFullRun } from "./useFullRun";
 import { buildPlan, defaultSelection, describeStepResult, testsFailed, PIPELINE_STEPS, TEST_STEPS } from "./fullRunPlan";
 import { formatExecutionTime } from "./format";
+import BenchmarkAxesForm from "./BenchmarkAxesForm";
 
 /** Підпис і колір кожного стану кроку. Зупинка і помилка — навмисно різні. */
 const STATUS_VIEW = {
@@ -51,17 +52,37 @@ function Checkbox({ checked, onChange, disabled, children }) {
   );
 }
 
-export default function FullRunSection({ ops, run, cancelOp, note, embedModels, configModel, onFinished }) {
+export default function FullRunSection({
+  ops,
+  run,
+  cancelOp,
+  note,
+  embedModels,
+  configModel,
+  benchmark,
+  onFinished,
+}) {
   const [selection, setSelection] = useState(defaultSelection);
   const [models, setModels] = useState([]);
 
   const fullRun = useFullRun({ run, cancelOp, note, onFinished });
   const { entries, state, running, stopping, totalMs } = fullRun;
 
+  // Осі бенчмарку їдуть у кроки tests.* параметром: те, що людина бачить у
+  // формі, і те, чим піде прогін, — один і той самий об'єкт.
   const plan = useMemo(
-    () => buildPlan(selection, models, configModel),
-    [selection, models, configModel],
+    () => buildPlan(selection, models, configModel, { axes: benchmark?.axesParam || null }),
+    [selection, models, configModel, benchmark?.axesParam],
   );
+
+  // Запобіжник maxModes спрацював саме на тому тесті, який обрано? Тоді
+  // прогін не починаємо взагалі: інакше пайплайн відпрацював би годину, а
+  // тести впали б із помилкою в кінці.
+  const blockedTests = TEST_STEPS.filter(
+    (step) => selection.tests[step.id] && benchmark?.blockedFor?.(step.kind),
+  );
+  const axesInvalid = Boolean(benchmark?.hasFieldErrors);
+  const startBlocked = blockedTests.length > 0 || axesInvalid;
 
   const toggleStep = (id) =>
     setSelection((prev) => ({ ...prev, steps: { ...prev.steps, [id]: !prev.steps[id] } }));
@@ -127,8 +148,25 @@ export default function FullRunSection({ ops, run, cancelOp, note, embedModels, 
         ))}
       </div>
 
+      {/* Осі бенчмарку. Секція прогону — саме те місце, де їх задають перед ніччю. */}
+      {benchmark ? <BenchmarkAxesForm benchmark={benchmark} disabled={running} /> : null}
+
+      {startBlocked ? (
+        <div className="dp-alert">
+          {axesInvalid
+            ? "Осі задані з помилкою — виправте поле, підсвічене червоним."
+            : `Прогін не почнеться: запобіжник maxModes не пропускає ${blockedTests
+                .map((step) => step.label)
+                .join(" і ")}. Звузьте осі або підніміть rag.benchmark.maxModes у конфізі.`}
+        </div>
+      ) : null}
+
       <div className="row">
-        <button type="button" onClick={() => fullRun.start(plan)} disabled={running || plan.length === 0}>
+        <button
+          type="button"
+          onClick={() => fullRun.start(plan)}
+          disabled={running || plan.length === 0 || startBlocked}
+        >
           {running
             ? `Прогін триває… ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
             : `Запустити прогін (${plan.length} ${stepsWord(plan.length)} поспіль)`}

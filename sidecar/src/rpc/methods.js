@@ -29,6 +29,7 @@ import {
 import * as walkthrough from "../modules/walkthrough/index.js";
 import { runRagTests } from "../tests/test-rag.js";
 import { runExternalTests } from "../tests/test-external.js";
+import { planBenchmark } from "../tests/benchmark-plan.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Корінь sidecar/src — звідти дістаємо допоміжні скрипти */
@@ -360,16 +361,34 @@ export const methods = {
   /**
    * RAG-бенчмарк. Недоступна Ollama — це помилка методу (кадр `error`),
    * а не смерть процесу: runRagTests() більше не робить process.exit.
+   *
+   * `params.axes` — осі, задані в панелі розробника. Конфіг лишається джерелом
+   * за замовчуванням: незадана вісь береться з `rag.benchmark.axes`.
    */
-  async "tests.run"(params, ctx) {
+  async "tests.run"(params = {}, ctx) {
     ctx.onProgress("Запуск RAG-бенчмарку...", 0);
-    return await runRagTests((msg, pct) => ctx.onProgress(msg, pct ?? null));
+    return await runRagTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
+      axes: params.axes ?? null,
+    });
   },
 
-  /** EXTERNAL-тести (intents, OOD, ambiguous). */
-  async "tests.runExternal"(params, ctx) {
+  /** EXTERNAL-тести (intents, OOD, ambiguous). Матриця та сама, що й у tests.run. */
+  async "tests.runExternal"(params = {}, ctx) {
     ctx.onProgress("Запуск EXTERNAL-тестів...", 0);
-    return await runExternalTests((msg, pct) => ctx.onProgress(msg, pct ?? null));
+    return await runExternalTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
+      axes: params.axes ?? null,
+    });
+  },
+
+  /**
+   * Ціна прогону ДО запуску: скільки режимів, скільки запитів до LLM і
+   * скільки це приблизно триватиме. Панель смикає метод на кожну зміну осей,
+   * тому він лише читає (кейси й оцінка темпу кешуються в процесі) і нічого
+   * не запускає. Помилкові осі повертаються кадром `error` — тим самим
+   * повідомленням, яке видав би сам прогін.
+   */
+  async "tests.plan"(params = {}) {
+    return await planBenchmark({ kind: params.kind || "rag", axes: params.axes ?? null });
   },
 
   /** Список файлів у sidecar/test-reports/. */
@@ -448,6 +467,10 @@ export const methods = {
   /**
    * Наступний крок за знімком екрана. Виклик зору довгий, тому ctx.signal
    * доходить до axios: job.cancel обриває саме його.
+   *
+   * Необов'язкові `frontmost` ({name, bundleId} від `frontmost_app()`),
+   * `appRunning` і `debug` прокидаються модулю як є: рішення про них — його,
+   * а не цього файла.
    */
   async "walkthrough.step"(params = {}, ctx) {
     return await walkthrough.step(params, {
@@ -462,6 +485,14 @@ export const methods = {
       signal: ctx.signal,
       onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
     });
+  },
+
+  /**
+   * Історія сесії: всі кроки з інструкціями, станами і сирими відповідями
+   * моделі. Читання з пам'яті, тому синхронне і без прогресу.
+   */
+  "walkthrough.history"(params = {}) {
+    return walkthrough.history(params);
   },
 
   /** Закриття сесії: звільняє пам'ять і видаляє знімки екрана. */
