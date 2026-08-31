@@ -15,6 +15,8 @@ import "./walkthrough.css";
 
 /** Чи розгорнуто режим розробника — пам'ятаємо між сесіями, як і положення. */
 const DEBUG_OPEN_KEY = "walkthrough.debugOpen";
+/** Те саме для списку кроків довідки: звичка людини переживає сесію. */
+const PLAN_OPEN_KEY = "walkthrough.planOpen";
 
 function readDebugOpen() {
   try {
@@ -29,6 +31,24 @@ function writeDebugOpen(open) {
     localStorage.setItem(DEBUG_OPEN_KEY, open ? "1" : "0");
   } catch {
     /* нема де запам'ятати — переживемо */
+  }
+}
+
+/** Список кроків у ручному режимі розгорнутий за замовчуванням: він і є суть
+    цього режиму — весь шлях видно одразу, а не по рядку крізь замкову шпарину. */
+function readPlanOpen() {
+  try {
+    return localStorage.getItem(PLAN_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writePlanOpen(open) {
+  try {
+    localStorage.setItem(PLAN_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    /* те саме: без сховища просто не запам'ятається */
   }
 }
 
@@ -86,6 +106,86 @@ function StepTrack({ stepIndex, totalSteps, planIndex }) {
   );
 }
 
+/**
+ * Стрілки по кроках навколо смужки послідовності.
+ *
+ * Назад — коли є куди: пройдений крок завжди можна перечитати. Уперед — лише
+ * там, де наступний крок УЖЕ існує: у ручному режимі це наступний пункт
+ * відомого списку, у режимі зору — лише те, що вже показували. Порожня
+ * стрілка вимкнена, а не схована: так видно, що межа є, і де саме вона.
+ */
+function StepArrows({ children, canBack, canForward, forwardTitle, onGo, index }) {
+  return (
+    <div className="wt-trackrow">
+      <button
+        type="button"
+        className="wt-nav-btn"
+        disabled={!canBack}
+        title="Попередній крок"
+        aria-label="Попередній крок"
+        onClick={() => onGo(index - 1)}
+      >
+        ‹
+      </button>
+      {children}
+      <button
+        type="button"
+        className="wt-nav-btn"
+        disabled={!canForward}
+        title={forwardTitle}
+        aria-label="Наступний крок"
+        onClick={() => onGo(index + 1)}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Весь список кроків із довідки. У ручному режимі він відомий наперед цілком,
+ * і ховати його немає підстав: людина бачить, скільки лишилось, і може
+ * повернутись до будь-якого пункту одним натисканням — без знімка, без моделі
+ * і без нового рядка в історії сесії.
+ */
+function PlanList({ steps, index, passed, open, busy, onToggle, onGo }) {
+  return (
+    <div className="wt-plan">
+      <button
+        type="button"
+        className="wt-plan-toggle"
+        aria-expanded={open}
+        aria-controls="wt-plan-list"
+        onClick={onToggle}
+      >
+        {open ? "Усі кроки ▾" : `Усі кроки ▸ (${steps.length})`}
+      </button>
+      {open ? (
+        <ol className="wt-plan-list" id="wt-plan-list">
+          {steps.map((text, i) => (
+            <li key={`${i}-${text}`}>
+              <button
+                type="button"
+                className="wt-plan-item"
+                data-at={i === index ? "true" : "false"}
+                data-done={i < passed ? "true" : "false"}
+                aria-current={i === index ? "step" : undefined}
+                disabled={busy}
+                onClick={() => onGo(i)}
+              >
+                <span className="wt-plan-num" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <span className="wt-plan-text">{text}</span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 /** Рядок очікування: час іде, видно що саме робимо, є вихід. */
 function WaitStrip({ text, progressMsg, elapsedMs, timeoutSec, model, onCancel }) {
   const long = elapsedMs >= LONG_WAIT_MS;
@@ -132,10 +232,11 @@ function FailureView({ error, onRetry, onClose }) {
 
 export default function WalkthroughPanel({ request, embedded = false, onClose }) {
   const [debugOpen, setDebugOpen] = useState(readDebugOpen);
+  const [planOpen, setPlanOpen] = useState(readPlanOpen);
   // Перемикач «сире» вмикає не лише панель: із ним кожен крок просить у бекенда
   // блок діагностики явно (`debug: true`), і конфіг для цього чіпати не треба.
   const wt = useWalkthrough(request, { debug: debugOpen });
-  const { phase, step, error, config } = wt;
+  const { phase, error, config } = wt;
 
   // Смуга заголовка тягне вікно. Атрибут ставимо лише в окремому вікні: у
   // вбудованому вигляді ця ж панель поїхала б разом із головним вікном.
@@ -149,17 +250,39 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.appId]);
 
-  const descriptor = useMemo(() => (step ? describeState(step.state) : null), [step]);
+  /**
+   * Крок, який зараз на екрані: живий або той, який людина гортає назад.
+   * Живий крок лишається окремо (`wt.step`) — на ньому тримаються діагностика
+   * й історія, і перегляд пройденого їх не чіпає.
+   */
+  const shown = wt.shownStep;
+  const descriptor = useMemo(() => (shown ? describeState(shown.state) : null), [shown]);
   const appName = wt.session?.appName || request?.appName || "";
   const busy = phase === "busy";
   /** Ручний режим: кроки зі списку довідки, зір не задіяний узагалі. */
   const manual = wt.stepSource === "plan";
   /** Що модель відповіла про ПОПЕРЕДНІЙ крок. null — її про це не питали. */
-  const progress = step?.progress || null;
+  const progress = shown?.progress || null;
+  /** Список кроків довідки: у ручному режимі відомий наперед і цілком. */
+  const plan = manual && Array.isArray(wt.session?.planned) ? wt.session.planned : [];
+  /**
+   * Уперед можна лише туди, де крок УЖЕ є: у ручному режимі це наступний
+   * пункт списку, у режимі зору — тільки те, що вже показували. Наступного
+   * кроку зору ще не існує, і кнопка «вперед» його не вигадає.
+   */
+  const planCount = plan.length || (Number.isFinite(shown?.totalSteps) ? shown.totalSteps : 0);
+  const canForward = wt.canForward || (manual && wt.cursor + 1 < planCount);
 
   const close = () => {
     wt.finish();
     onClose?.();
+  };
+
+  const togglePlan = () => {
+    setPlanOpen((open) => {
+      writePlanOpen(!open);
+      return !open;
+    });
   };
 
   const toggleDebug = () => {
@@ -192,7 +315,7 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
       className={embedded ? "wt wt-embedded" : "wt"}
       data-tone={descriptor ? descriptor.tone : "go"}
       data-phase={phase}
-      data-state={step?.state || ""}
+      data-state={shown?.state || ""}
       aria-label="Покрокова підказка"
     >
       {/* Смуга заголовка: за неї вікно тягнеться (data-tauri-drag-region).
@@ -244,12 +367,27 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
         </button>
       </header>
 
-      {step ? (
-        <StepTrack
-          stepIndex={step.stepIndex}
-          totalSteps={step.totalSteps}
-          planIndex={step.planIndex}
-        />
+      {/* Смужка послідовності зі стрілками обабіч: крок ліворуч — назад,
+          праворуч — уперед. Перехід між уже показаними кроками нічого не
+          коштує: ні знімка, ні звернення до бекенда, ні рядка в історії. */}
+      {shown ? (
+        <StepArrows
+          index={wt.cursor}
+          canBack={wt.canBack && !busy}
+          canForward={canForward && !busy}
+          forwardTitle={
+            manual
+              ? "Наступний крок списку"
+              : "Наступний із уже пройдених. Далі в режимі зору крок дає модель за поточним екраном."
+          }
+          onGo={wt.goToStep}
+        >
+          <StepTrack
+            stepIndex={shown.stepIndex}
+            totalSteps={shown.totalSteps}
+            planIndex={shown.planIndex}
+          />
+        </StepArrows>
       ) : null}
 
       {phase === "error" && error ? (
@@ -267,16 +405,16 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
         <div className="wt-body">
           {/* Під час очікування попередній крок навмисно лишається видимим,
               лише притлумленим: людина бачить, що вікно живе, а не зависло. */}
-          {step && descriptor ? (
+          {shown && descriptor ? (
             <div className="wt-step" data-dim={busy ? "true" : "false"}>
               {descriptor.title ? <h1 className="wt-title">{descriptor.title}</h1> : null}
-              <p className="wt-instruction">{step.instruction || "Крок без опису."}</p>
-              {step.target?.label ? (
-                <p className="wt-target">Шукайте: {step.target.label}</p>
+              <p className="wt-instruction">{shown.instruction || "Крок без опису."}</p>
+              {shown.target?.label ? (
+                <p className="wt-target">Шукайте: {shown.target.label}</p>
               ) : null}
               {/* Ручний режим бере це з довідки: орієнтир замість рамки, бо
                   на екран у цьому режимі ніхто не дивиться. */}
-              {step.expect ? <p className="wt-expect">Має бути видно: {step.expect}</p> : null}
+              {shown.expect ? <p className="wt-expect">Має бути видно: {shown.expect}</p> : null}
               {descriptor.hint ? <p className="wt-hint">{descriptor.hint}</p> : null}
               {/* Пряма відповідь моделі на пряме питання про попередній крок.
                   Показуємо лише «не бачу виконання»: підтверджене просування і
@@ -287,13 +425,24 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
                   {progress.note ? `: ${progress.note}` : "."}
                 </p>
               ) : null}
-              {step.state === "wrong_window" && wt.frontmost ? (
+              {shown.state === "wrong_window" && wt.frontmost ? (
                 <p className="wt-hint">Зараз попереду: {wt.frontmost}.</p>
               ) : null}
             </div>
           ) : null}
 
-          {!step && !busy ? <p className="wt-hint">Готуємо підказку…</p> : null}
+          {/* Перегляд пройденого — окремий стан вікна, і про нього треба
+              сказати прямо: інакше здається, що сесія поїхала назад. Вона не
+              поїхала: крок сесії лишився там, де був. */}
+          {wt.reviewing ? (
+            <p className="wt-review">
+              Ви дивитесь пройдений крок
+              {manual ? "" : ": наступні кроки в режимі зору наперед невідомі — їх дає модель за поточним екраном"}
+              .
+            </p>
+          ) : null}
+
+          {!shown && !busy ? <p className="wt-hint">Готуємо підказку…</p> : null}
           {wt.note ? <p className="wt-note">{wt.note}</p> : null}
 
           {/* Скільки разів вікно ходило до зору. У ручному режимі — нуль, і це
@@ -314,6 +463,15 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
               model={config.visionModel}
               onCancel={wt.cancel}
             />
+          ) : wt.reviewing && !manual ? (
+            /* Режим зору: з пройденого кроку нікуди вести — знімок має
+               відповідати тому, що зараз на екрані. Тому єдина дія — назад
+               до поточного кроку. */
+            <div className="wt-actions">
+              <button type="button" className="wt-btn wt-btn-main" onClick={wt.backToCurrent}>
+                Повернутись до поточного кроку
+              </button>
+            </div>
           ) : (
             <div className="wt-actions">
               {descriptor ? (
@@ -329,7 +487,7 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
                   на знімок 1280 пікселів завширшки: коли вони розходяться,
                   права людина, і сесія рухається за нею. У ручному режимі
                   кнопки немає — там кожне «далі» і є підтвердженням. */}
-              {descriptor?.showConfirm && !manual ? (
+              {descriptor?.showConfirm && !manual && !wt.reviewing ? (
                 <button
                   type="button"
                   className="wt-btn wt-btn-confirm"
@@ -339,7 +497,14 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
                   Я це зробив
                 </button>
               ) : null}
-              {wt.note && !step ? (
+              {/* Ручний режим: «Далі» веде списком, тож із перегляду можна не
+                  йти пішки, а повернутись до поточного кроку одним рухом. */}
+              {wt.reviewing ? (
+                <button type="button" className="wt-btn wt-btn-quiet" onClick={wt.backToCurrent}>
+                  До поточного кроку
+                </button>
+              ) : null}
+              {wt.note && !shown ? (
                 <button type="button" className="wt-btn wt-btn-quiet" onClick={() => wt.start()}>
                   Спробувати ще раз
                 </button>
@@ -349,10 +514,24 @@ export default function WalkthroughPanel({ request, embedded = false, onClose })
 
           {/* Головний спосіб урятувати сесію, коли модель показала не те.
               Тому він на видноті, а не сховано в меню. */}
-          {descriptor?.showStuck && !busy && !manual ? (
+          {descriptor?.showStuck && !busy && !manual && !wt.reviewing ? (
             <button type="button" className="wt-btn wt-btn-stuck" onClick={wt.stuck}>
               Я не бачу цієї кнопки
             </button>
+          ) : null}
+          {/* Весь шлях одразу — головне, чого бракувало ручному режимові:
+              список кроків відомий наперед, і тримати його від людини не було
+              підстав. Натискання на пункт — перехід без знімка і без моделі. */}
+          {manual && plan.length > 0 ? (
+            <PlanList
+              steps={plan}
+              index={wt.cursor}
+              passed={wt.track.length}
+              open={planOpen}
+              busy={busy}
+              onToggle={togglePlan}
+              onGo={wt.goToStep}
+            />
           ) : null}
         </div>
       ) : null}

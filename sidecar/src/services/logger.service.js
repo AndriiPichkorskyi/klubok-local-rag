@@ -52,6 +52,15 @@ const IDLE_HEARTBEAT_EVERY = 12;
 /** Наскільки має підрости частка купи, щоб повторити попередження. */
 const WARN_REPEAT_STEP = 0.05;
 
+/**
+ * Ключі, які в журнал сесії walkthrough не потрапляють НІКОЛИ: у них лежить
+ * саме зображення. У журналі мають бути лише шляхи до кадрів — дублювати екран
+ * користувача на диску не можна (правило 1 контракту модуля 2.5).
+ */
+const JOURNAL_FORBIDDEN_KEYS = ["base64", "imageBase64", "image64", "images", "bytesBase64"];
+/** Стеля довжини одного рядка в журналі: промпт і сира відповідь потрібні цілі, решта — ні. */
+const JOURNAL_MAX_STRING = Number(process.env.SIDECAR_JOURNAL_MAX_STRING || 20000);
+
 /** Байти → мегабайти з одним знаком. */
 function mb(bytes) {
   return Math.round((bytes / 1024 / 1024) * 10) / 10;
@@ -80,6 +89,9 @@ class LoggerService {
     this.memoryTicks = 0;
     this.lastWarnedRatio = 0;
     this.memoryWarningListeners = new Set();
+
+    /** sessionId → шлях до файла журналу сесії walkthrough. */
+    this.journalFiles = new Map();
 
     this.handlersInstalled = false;
     /** Межа купи V8 у байтах — беремо з рушія, а не з константи в коді. */
@@ -408,6 +420,169 @@ class LoggerService {
       },
       "Старт процесу sidecar",
     );
+  }
+
+  // ────────────────────── журнал сесій walkthrough ──────────────────────
+
+  /**
+   * Другий бік модуля 2.5: після сесії має лишитись файл, за яким її можна
+   * РОЗІБРАТИ. Блок `debug` у відповіді живе рівно один крок і зникає разом із
+   * вікном підказки; `walkthrough.history` живе рівно стільки, скільки живе
+   * процес sidecar. Обидва не годяться, коли питання ставлять наступного дня:
+   * «чому на третьому кроці модель повернула саме це».
+   *
+   * Формат — JSONL: один запис на рядок. Він читається і людиною (`less`,
+   * `grep`), і програмою (`jq`, `JSON.parse` по рядках), і дописується без
+   * переписування файла, тож обірвана сесія лишає все, що встигло статися.
+   *
+   * ЗНІМКІВ У ЖУРНАЛІ НЕМАЄ. Кадри прибираються у `walkthrough.finish` (це
+   * екран користувача, правило 1 контракту модуля), і дублювати їх у журналі
+   * означало б обійти власне правило. У записі лишаються тільки ШЛЯХИ і
+   * розміри; `_stripBinary()` окремо викидає з запису все, що схоже на
+   * закодоване зображення.
+   */
+
+  /** Тека журналів (шлях із конфіга відносний до кореня проєкта). */
+  walkthroughJournalDir() {
+    const configured =
+      config.walkthrough?.journalDir || "./sidecar/data/walkthrough-journal";
+    return path.resolve(config.paths.projectDir, configured);
+  }
+
+  /** Чи вести журнал сесій. Вимикається одним ключем конфіга. */
+  walkthroughJournalEnabled() {
+    return config.walkthrough?.journal !== false;
+  }
+
+  /** Шлях до журналу відкритої сесії (null, якщо журнал не ведеться). */
+  walkthroughJournalPath(sessionId) {
+    return this.journalFiles.get(String(sessionId)) || null;
+  }
+
+  /**
+   * Викидає з запису все, що не має права потрапити у файл:
+   * поля із закодованим зображенням, надто довгі рядки і випадкові буфери.
+   * Це запобіжник, а не форматування: жоден виклик не має покластись на те,
+   * що передав «правильний» об'єкт.
+   */
+  _stripBinary(value, depth = 0) {
+    if (depth > 8) return "…(занадто глибока структура)";
+    if (value === null || value === undefined) return value;
+    if (typeof value === "string") {
+      // Довгий рядок з самих лише символів base64 — це майже напевно кадр.
+      if (value.length > 2000 && /^[A-Za-z0-9+/=\s]+$/.test(value)) {
+        return `…(двійкові дані пропущено, ${value.length} символів)`;
+      }
+      if (value.length > JOURNAL_MAX_STRING) {
+        return `${value.slice(0, JOURNAL_MAX_STRING)}\n…(обрізано на ${JOURNAL_MAX_STRING} символах)`;
+      }
+      return value;
+    }
+    if (typeof value !== "object") return value;
+    if (Buffer.isBuffer(value) || ArrayBuffer.isView(value)) {
+      return `…(двійкові дані пропущено, ${value.length} байт)`;
+    }
+    if (Array.isArray(value)) return value.map((item) => this._stripBinary(item, depth + 1));
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (JOURNAL_FORBIDDEN_KEYS.includes(key)) continue;
+      out[key] = this._stripBinary(item, depth + 1);
+    }
+    return out;
+  }
+
+  /**
+   * Лишає в теці не більше `keep` файлів журналу, найстаріші видаляє.
+   * Імена починаються з часової позначки, тож звичайне сортування за іменем —
+   * це сортування за часом.
+   */
+  async rotateWalkthroughJournals(keep) {
+    const dir = this.walkthroughJournalDir();
+    const limit = Math.max(1, Number(keep) || 20);
+    let names = [];
+    try {
+      names = (await fs.readdir(dir)).filter((name) => name.endsWith(".jsonl")).sort();
+    } catch {
+      return 0;
+    }
+    let removed = 0;
+    // Мінус один: одразу після ротації буде створено новий файл.
+    for (const name of names.slice(0, Math.max(0, names.length - (limit - 1)))) {
+      try {
+        await fs.unlink(path.join(dir, name));
+        removed += 1;
+      } catch {
+        /* чужий або вже видалений файл не має валити сесію */
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Відкриває журнал сесії: ротація теки + перший запис із метаданими сесії
+   * (мета, програма, обрані статті з назвами, звідки вони взялись, план).
+   * @returns {Promise<{path: string|null, rotated: number}>}
+   */
+  async walkthroughJournalOpen(sessionId, header = {}) {
+    if (!this.walkthroughJournalEnabled()) return { path: null, rotated: 0 };
+    const id = String(sessionId);
+    try {
+      const dir = this.walkthroughJournalDir();
+      await fs.mkdir(dir, { recursive: true });
+      const rotated = await this.rotateWalkthroughJournals(config.walkthrough?.journalKeep);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const file = path.join(dir, `${stamp}-${id.slice(0, 8)}.jsonl`);
+      this.journalFiles.set(id, file);
+      await this.walkthroughJournalWrite(id, "session.start", header);
+      return { path: file, rotated };
+    } catch (error) {
+      this.event(
+        "warn",
+        "walkthrough.journal.error",
+        { sessionId: id, error: error.message },
+        "Не вдалося відкрити журнал сесії walkthrough",
+      );
+      this.journalFiles.delete(id);
+      return { path: null, rotated: 0 };
+    }
+  }
+
+  /**
+   * Один рядок журналу. Журнал — інструмент налагодження і НЕ має права
+   * зупинити сесію, тож будь-яка помилка запису тут гаситься.
+   */
+  async walkthroughJournalWrite(sessionId, kind, record = {}) {
+    const file = this.journalFiles.get(String(sessionId));
+    if (!file) return false;
+    try {
+      const line =
+        JSON.stringify({
+          at: new Date().toISOString(),
+          kind,
+          sessionId: String(sessionId),
+          ...this._stripBinary(record),
+        }) + "\n";
+      await fs.appendFile(file, line, "utf8");
+      return true;
+    } catch (error) {
+      this.event(
+        "warn",
+        "walkthrough.journal.error",
+        { sessionId: String(sessionId), kind, error: error.message },
+        "Не вдалося дописати журнал сесії walkthrough",
+      );
+      return false;
+    }
+  }
+
+  /** Закриває журнал сесії підсумковим записом. @returns {Promise<string|null>} */
+  async walkthroughJournalClose(sessionId, summary = {}) {
+    const id = String(sessionId);
+    const file = this.journalFiles.get(id);
+    if (!file) return null;
+    await this.walkthroughJournalWrite(id, "session.finish", summary);
+    this.journalFiles.delete(id);
+    return file;
   }
 
   // ─────────────────────── сумісність зі старим API ───────────────────────

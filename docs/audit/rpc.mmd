@@ -1,0 +1,25 @@
+graph TD
+    subgraph RustClient ["Tauri (Rust)"]
+        TauriEngine[Основний потік Tauri] --> WsClient[WebSocket Клієнт]
+        WsClient --> Events["Обробник подій (Progress)"]
+    end
+
+    subgraph NodeServer ["Sidecar (Node.js)"]
+        WsServer[WebSocket Сервер] --> Router[RPC Router]
+        Router --> Auth[Перевірка токена]
+        Auth --> Handlers["Обробники методів (pipeline.*, query, etc.)"]
+    end
+    
+    WsClient -- "(1) Запит: {'id': 1, 'method': '...', 'params': {...}}" --> WsServer
+    Handlers -- "(2) Прогрес: {'type': 'progress', 'id': 1, 'pct': ...}" --> WsClient
+    Handlers -- "(3) Відповідь: {'id': 1, 'result': {...}}" --> WsClient
+    
+    Handlers -.-> AbortController["Скасування (job.cancel)"]
+    AbortController -.-> Handlers
+
+    classDef rust fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
+    classDef node fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
+
+    class TauriEngine,WsClient,Events rust;
+    class WsServer,Router,Auth,Handlers,AbortController node;
+    classDef default color:#333333;

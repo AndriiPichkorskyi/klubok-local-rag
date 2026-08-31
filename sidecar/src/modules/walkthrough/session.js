@@ -79,6 +79,55 @@ export function normalizeInstruction(value) {
     .trim();
 }
 
+/**
+ * Наскільки дві інструкції — це «те саме, іншими словами».
+ *
+ * Порівняння за словами (коефіцієнт Дайса), а не за рядком, і причина
+ * конкретна: модель, якій заборонили повторювати крок, повертає його
+ * ПЕРЕФРАЗОВАНИМ («Натисніть кнопку для редагування відео» → «Натисніть
+ * кнопку редагування відео»). Посимвольне порівняння такий повтор пропускає,
+ * і людина знову бачить те, що вже зробила.
+ *
+ * Числа: 1 — набори слів збігаються, 0 — спільних слів немає.
+ */
+export function instructionSimilarity(a, b) {
+  const left = normalizeInstruction(a).split(" ").filter(Boolean);
+  const right = normalizeInstruction(b).split(" ").filter(Boolean);
+  if (left.length === 0 || right.length === 0) return 0;
+  const pool = new Set(left);
+  let shared = 0;
+  for (const word of new Set(right)) if (pool.has(word)) shared += 1;
+  return (2 * shared) / (pool.size + new Set(right).size);
+}
+
+/**
+ * Поріг, з якого дві інструкції вважаються тією самою дією. 0.8 підібрано так,
+ * щоб перефразування («…для редагування…» → «…редагування…») ловилось, а зміна
+ * самої дії («кнопку Редагувати» → «кнопку Обрізати») — ні.
+ */
+export const SAME_INSTRUCTION_THRESHOLD = 0.8;
+
+/**
+ * Чи цю інструкцію людина вже підтвердила як виконану — з урахуванням
+ * перефразувань. Повертає САМЕ ТОЙ підтверджений текст, з яким збіглось
+ * (він потрібен у нотатках і журналі), або null.
+ *
+ * Слово людини в сесії остаточне: вона дивиться на свій екран, а модель — на
+ * зменшений знімок. Тому підтвердження діє далі по всій сесії, а не лише на
+ * тому виклику, у якому його натиснули.
+ */
+export function matchConfirmedStep(session, text) {
+  const value = String(text || "").trim();
+  if (!value) return null;
+  const norm = normalizeInstruction(value);
+  if (!norm) return null;
+  for (const confirmed of session.confirmedSteps || []) {
+    if (normalizeInstruction(confirmed) === norm) return confirmed;
+    if (instructionSimilarity(confirmed, value) >= SAME_INSTRUCTION_THRESHOLD) return confirmed;
+  }
+  return null;
+}
+
 /** Скільки сесій зараз відкрито (для діагностики). */
 export function activeSessions() {
   return [...sessions.values()].map((s) => ({

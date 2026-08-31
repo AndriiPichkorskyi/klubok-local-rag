@@ -14,6 +14,7 @@ import {
   screenCapture,
   launchApp,
   frontmostApp,
+  frontmostLabel,
   overlayHighlight,
   MissingCommandError,
   ScreenPermissionError,
@@ -156,6 +157,11 @@ export function useWalkthrough(request, options = {}) {
   // Скільки разів за сесію вікно справді ходило до зору (кадр + виклик моделі).
   // У ручному режимі лишається нулем — це і є доказ, що зір не задіяний.
   const [visionCalls, setVisionCalls] = useState(0);
+  // Пройдені кроки ЦІЄЇ сесії в порядку показу і те, на якому з них людина
+  // зараз дивиться. Навігація по них — суто справа вікна: жодного знімка,
+  // жодного звернення до бекенда, і в історію сесії повернення не потрапляє.
+  const [track, setTrack] = useState([]);
+  const [cursor, setCursor] = useState(0);
 
   const runRef = useRef(0); // лічильник запусків: відповідь застарілого виклику ігноруємо
   const activeRef = useRef(false);
@@ -165,6 +171,14 @@ export function useWalkthrough(request, options = {}) {
   const sessionIdRef = useRef(null);
   const configRef = useRef(DEFAULT_CONFIG);
   const stepSourceRef = useRef(DEFAULT_CONFIG.stepSource);
+  // Дзеркала track/cursor: обробники читають їх синхронно, поки стан ще не
+  // перемалювався (натискання приходять швидше за рендер).
+  const trackRef = useRef([]);
+  const cursorRef = useRef(0);
+  // Режим, у якому зібрано track. Списки різних режимів між собою не
+  // зіставляються (контракт: після перемикання курсор довідки починається з
+  // нуля), тому при зміні режиму стрічка починається спочатку.
+  const trackModeRef = useRef(null);
   const wantDebugRef = useRef(false);
   wantDebugRef.current = options.debug === true;
 
@@ -272,6 +286,23 @@ export function useWalkthrough(request, options = {}) {
       stepSourceRef.current = safe.stepSource;
       setStepSource(safe.stepSource);
     }
+    // Стрічка пройденого. У ручному режимі місце кроку задає `planIndex` —
+    // тоді повторний прохід тим самим пунктом не подвоює рядок; у режимі зору
+    // позиції немає, і крок просто дописується в кінець.
+    const mode = stepSourceRef.current;
+    const fresh = trackModeRef.current !== mode ? [] : trackRef.current;
+    trackModeRef.current = mode;
+    const at =
+      mode === "plan" && Number.isFinite(safe.planIndex) && safe.planIndex >= 0
+        ? safe.planIndex
+        : fresh.length;
+    const next = fresh.slice();
+    for (let i = next.length; i < at; i += 1) next[i] = null; // дірок не лишаємо
+    next[at] = safe;
+    trackRef.current = next;
+    cursorRef.current = at;
+    setTrack(next);
+    setCursor(at);
     setStep(safe);
     setBusyKind(null);
     setPhase("step");
@@ -395,7 +426,9 @@ export function useWalkthrough(request, options = {}) {
       //    знає точно. З цієї відповіді бекенд і виставляє wrong_window.
       const front = await frontmostApp();
       if (runRef.current !== runId) return;
-      setFrontmost(front?.name || null);
+      // У вікні показуємо ПІДПИС, а не сире значення: коли система назви не
+      // дала, це «інша програма», а не порожнеча і не шматок виводу lsappinfo.
+      setFrontmost(front ? frontmostLabel(front) : null);
 
       const params = { sessionId, screenshotPath: shot.path };
       // Повернення в режим зору з ручного — тим самим викликом, що й крок.
@@ -407,6 +440,8 @@ export function useWalkthrough(request, options = {}) {
       // приймає лише сесію і кадр, тож туди зайвого не шлемо.
       const frontmostSent = Boolean(front) && method === "walkthrough.step";
       if (frontmostSent) {
+        // Назву вже очистив `frontmostApp()`: зіпсована сюди не дійде, а бекенд
+        // складає з цього поля текст кроку («зараз попереду «…»»).
         params.frontmost = { name: front.name ?? null, bundleId: front.bundleId ?? null };
       }
       // Розгорнутий режим розробника — це і є запит на сире. Блок діагностики
@@ -472,6 +507,66 @@ export function useWalkthrough(request, options = {}) {
     [advance],
   );
 
+  /**
+   * Крок уперед по СПИСКУ ДОВІДКИ, коли попереду ще не пройдені пункти.
+   *
+   * Це звичайний `walkthrough.step` ручного режиму — той самий, що й на «Далі»:
+   * без кадру, без ОС, без моделі, ~1 мс. Потрібен лише тоді, коли людина
+   * перескочила зі списку на пункт, до якого сесія ще не доходила: тоді сесія
+   * чесно проходить проміжні пункти, а не робить вигляд, що вони були.
+   */
+  const advanceTo = useCallback(
+    async (target) => {
+      if (stepSourceRef.current !== "plan") return;
+      let guard = 0;
+      while (trackRef.current.length <= target && guard < 32) {
+        guard += 1;
+        const before = trackRef.current.length;
+        // eslint-disable-next-line no-await-in-loop
+        await advance();
+        // Крок не додався — помилка або кінець списку. Далі тиснути нема сенсу.
+        if (trackRef.current.length <= before) return;
+      }
+    },
+    [advance],
+  );
+
+  /**
+   * Перехід на крок номер `target` — головне, чого модулю бракувало: список
+   * ішов лише вперед, і побачити попередній крок було ніяк.
+   *
+   * Правила рівно такі, які кожен режим справді дозволяє:
+   *   • по ВЖЕ ПОКАЗАНИХ кроках — миттєво і повністю в вікні: ні знімка, ні
+   *     звернення до бекенда, ні моделі. Повернення назад не є новим кроком,
+   *     тому ні `stepIndex`, ні історія сесії, ні лічильник зору не рухаються;
+   *   • далі за пройдене — лише в ручному режимі, де список довідки відомий
+   *     наперед (див. advanceTo);
+   *   • у режимі зору наступного кроку ще НЕМАЄ: його дає модель за поточним
+   *     екраном. Стрибка вперед там немає навмисно — вдавати нічого.
+   */
+  const goToStep = useCallback(
+    (target) => {
+      if (!sessionIdRef.current) return undefined;
+      const index = Math.max(0, Math.trunc(Number(target) || 0));
+      if (index < trackRef.current.length) {
+        cursorRef.current = index;
+        setCursor(index);
+        setNote("");
+        return undefined; // саме тут і живе «миттєво»: жодного виклику
+      }
+      if (stepSourceRef.current !== "plan") return undefined;
+      return advanceTo(index);
+    },
+    [advanceTo],
+  );
+
+  /** Повернення з перегляду на той крок, де сесія стоїть насправді. */
+  const backToCurrent = useCallback(() => {
+    const last = Math.max(0, trackRef.current.length - 1);
+    cursorRef.current = last;
+    setCursor(last);
+  }, []);
+
   /** «Я це зробив» — останнє слово людини про попередній крок. */
   const confirmDone = useCallback(() => advance({ userConfirmed: true }), [advance]);
 
@@ -488,6 +583,12 @@ export function useWalkthrough(request, options = {}) {
       if (!settle(runId)) return;
       const safe = result && typeof result === "object" ? result : {};
       sessionIdRef.current = safe.sessionId ?? null;
+      // Нова сесія — нова стрічка пройденого: чужі кроки в ній не місце.
+      trackRef.current = [];
+      trackModeRef.current = null;
+      cursorRef.current = 0;
+      setTrack([]);
+      setCursor(0);
       setSession({
         sessionId: safe.sessionId ?? null,
         appName: safe.appName || request.appName,
@@ -568,13 +669,20 @@ export function useWalkthrough(request, options = {}) {
         case ACTION.MANUAL:
           return switchMode("plan");
         case ACTION.NEXT:
+          // Ручний режим: «Далі» — це просто наступний рядок відомого списку.
+          // Якщо він уже пройдений, перехід миттєвий і бекенда не турбує.
+          if (stepSourceRef.current === "plan") return goToStep(cursorRef.current + 1);
+          // Режим зору: з перегляду пройденого спершу повертаємось до
+          // поточного кроку — знімок має відповідати тому, що людина бачить.
+          if (cursorRef.current < trackRef.current.length - 1) return backToCurrent();
+          return advance();
         case ACTION.RECHECK:
         case ACTION.RETRY:
         default:
           return advance();
       }
     },
-    [advance, confirmDone, finish, launch, switchMode],
+    [advance, backToCurrent, confirmDone, finish, goToStep, launch, switchMode],
   );
 
   // Закриття вікна не має лишати сесію і знімки живими на диску.
@@ -589,6 +697,13 @@ export function useWalkthrough(request, options = {}) {
       onUnload();
     };
   }, []);
+
+  // Який крок ЗАРАЗ на екрані вікна: живий або той, який людина переглядає.
+  // Живий (`step`) лишається окремо — на ньому тримаються діагностика й історія.
+  const known = track.length;
+  const at = Math.min(cursor, Math.max(0, known - 1));
+  const reviewing = known > 0 && at < known - 1;
+  const shownStep = known ? track[at] || step : step;
 
   return {
     phase,
@@ -607,6 +722,15 @@ export function useWalkthrough(request, options = {}) {
     // діагностиці, і звіту: у ручному режимі число лишається нулем.
     stepSource,
     visionCalls,
+    // Навігація по кроках сесії.
+    track,
+    cursor: at,
+    shownStep,
+    reviewing,
+    canBack: at > 0,
+    canForward: at < known - 1,
+    goToStep,
+    backToCurrent,
     start,
     stuck,
     cancel,

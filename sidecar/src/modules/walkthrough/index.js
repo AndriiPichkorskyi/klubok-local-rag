@@ -53,6 +53,7 @@ import {
   createSession,
   dropSession,
   getSession,
+  matchConfirmedStep,
   normalizeInstruction,
   trackFile,
 } from "./session.js";
@@ -134,6 +135,7 @@ function buildDebug({
   progress = null,
   repeated = null,
   sessionVisionCalls = null,
+  suppressedInstruction = null,
 }) {
   // Порожні поля з блока прибираємо: коли стан визначила ОС, кадру й промпта
   // просто не існує, і два десятки null-ів лише заважають читати сире.
@@ -148,6 +150,10 @@ function buildDebug({
     // з них видно, чому сесія зсунулась уперед або чому стала.
     progress,
     repeated,
+    // Інструкція, яку модуль НЕ показав користувачеві (повтор підтвердженого
+    // кроку). У звичайній відповіді її немає навмисно — вона тут саме тому,
+    // що до людини вона доходити не має.
+    suppressedInstruction,
     allowedStates,
     model,
     durationMs: Date.now() - startedAt,
@@ -194,6 +200,90 @@ function dropEmpty(block) {
 }
 
 /**
+ * Один запис у журналі сесії на диску (`logger.walkthroughJournal*`).
+ *
+ * Це те, чого не дає ні блок `debug` (живе один крок), ні
+ * `walkthrough.history` (живе, доки живий процес): файл, за яким сесію можна
+ * розібрати НАСТУПНОГО ДНЯ. Тому сюди йде все сире — надісланий промпт,
+ * відповідь моделі до розбору, розібрані поля, стан і чим він визначений,
+ * тривалості й нотатки санітарії.
+ *
+ * Самого кадру тут немає: лише шлях і розміри. Знімок екрана прибирається у
+ * `walkthrough.finish`, і класти його копію в журнал означало б обійти власне
+ * правило контракту.
+ */
+function journalStep(
+  session,
+  kind,
+  {
+    response,
+    fields = null,
+    promptPair = null,
+    answer = null,
+    image = null,
+    guard = null,
+    stateSource = null,
+    decidedBy = null,
+    match = null,
+    model = null,
+    suppressedInstruction = null,
+    extra = null,
+  },
+) {
+  return logger.walkthroughJournalWrite(session.sessionId, kind, {
+    stepIndex: response.stepIndex,
+    stepSource: session.stepSource,
+    planIndex: response.planIndex ?? null,
+    state: response.state,
+    stateSource,
+    source: response.source,
+    decidedBy,
+    instruction: response.instruction,
+    suppressedInstruction,
+    target: response.target,
+    screenSummary: fields ? (fields.screenSummary ?? null) : null,
+    progress: response.progress ?? null,
+    repeated: response.repeated ?? null,
+    // Чи справді зсунувся лічильник — за тим самим правилом, що в commitStep:
+    // стан `loop`/`unclear` кроком не рахується, навіть коли просування дозволене.
+    advanced: guard
+      ? guard.advance && !STATES_WITHOUT_PROGRESS.includes(response.state)
+      : null,
+    model,
+    prompt: promptPair ? { system: promptPair.system, prompt: promptPair.prompt } : null,
+    raw: answer ? clampRaw(answer.raw) : null,
+    modelFailure: answer ? answer.failure : null,
+    // ЛИШЕ шляхи і розміри кадру. Самого зображення в журналі немає.
+    screenshot: image
+      ? {
+          originalPath: image.originalPath,
+          sentPath: image.path,
+          originalWidth: image.originalWidth,
+          originalHeight: image.originalHeight,
+          sentWidth: image.width,
+          sentHeight: image.height,
+          originalBytes: image.originalBytes,
+          sentBytes: image.bytes,
+          resized: image.resized,
+        }
+      : null,
+    durations: { stepMs: response.elapsedMs, ollamaMs: answer ? answer.ollamaMs : 0 },
+    notes: fields ? fields.notes || [] : [],
+    frontmost: match
+      ? {
+          provided: match.provided,
+          matched: match.matched,
+          by: match.by,
+          name: match.name,
+          bundleId: match.bundleId,
+          reason: match.reason,
+        }
+      : null,
+    ...(extra || {}),
+  });
+}
+
+/**
  * Складає план кроків звичайною чат-моделлю (режим `plan`).
  * Робиться ОДИН раз на сесію, у walkthrough.start.
  */
@@ -222,7 +312,15 @@ async function buildPlan({ appName, goal, docsText, maxSteps, signal, onProgress
 
 /**
  * `walkthrough.start` — створює сесію і готує документацію.
- * @param {{appId: string, goal: string, docId?: number}} params
+ *
+ * `docId` і `docTitle` — це стаття, яку той, хто починає сесію, УЖЕ знайшов:
+ * Spotlight прогнав повний пайплайн `rag/engine.processQuery` (вектори + FTS +
+ * RRF) і рекомендував програму на підставі конкретного документа. Прийняти цей
+ * документ означає вести людину саме тим текстом, який їй показали; шукати
+ * заново — гарантовано шукати гірше. Обидва параметри необов'язкові: коли їх
+ * немає (CLI, тести), модуль шукає сам, але тим самим гібридним пошуком.
+ *
+ * @param {{appId: string, goal: string, docId?: number, docTitle?: string}} params
  * @param {{signal: AbortSignal, onProgress: Function}} ctx
  */
 export async function start(params = {}, ctx = {}) {
@@ -258,10 +356,20 @@ export async function start(params = {}, ctx = {}) {
   const purged = await purgeScreenshotsDir();
 
   onProgress(`Готуємо документацію програми «${app.name}»...`);
-  const docs = await loadAppDocs({ app, goal, docId: params.docId ?? null });
+  const docs = await loadAppDocs({
+    app,
+    goal,
+    docId: params.docId ?? null,
+    docTitle: params.docTitle ?? null,
+    onProgress,
+  });
 
   let plan = [];
   if (cfg.stepSource === "plan") {
+    // Ручний режим — це список кроків із довідки. Якщо статті під мету немає,
+    // складати його нема з чого, і вигадувати кроки чат-моделлю «зі знання
+    // світу» означало б рівно ту саму мовчазну підміну, лише іншим шляхом.
+    if (!docs.matched) throw new Error(`${docs.message} Список кроків скласти нема з чого.`);
     plan = await buildPlan({
       appName: app.name,
       goal,
@@ -286,9 +394,46 @@ export async function start(params = {}, ctx = {}) {
     docsText: docs.text,
     docs: docs.docs,
     docsSource: docs.source,
+    // Чи знайшлась стаття саме під мету. `false` — не помилка, а факт, який
+    // сесія мусить сказати людині вголос (див. step()).
+    docsMatched: docs.matched,
+    docsMessage: docs.message,
+    docsMissingReported: false,
+    docsQuery: docs.query,
+    docsCandidates: docs.candidates,
+    docsNotes: docs.notes,
     stepSource: cfg.stepSource,
     plan,
   });
+
+  // Журнал сесії на диск. Відкривається тут, бо саме тут уже відомо все, що
+  // потрібно для розбору: мета, програма, обрані статті з назвами і те, звідки
+  // вони взялись.
+  const journal = await logger.walkthroughJournalOpen(session.sessionId, {
+    appId: app.id,
+    appName: app.name,
+    goal,
+    stepSource: cfg.stepSource,
+    docsSource: docs.source,
+    docsMatched: docs.matched,
+    docsMessage: docs.message,
+    docsQuery: docs.query,
+    docs: docs.docs,
+    docsCandidates: docs.candidates,
+    docsNotes: docs.notes,
+    docsChars: docs.text.length,
+    plan: plan.map((step) => step.instruction),
+    config: {
+      visionModel: config.ollama.visionModel,
+      chatModel: config.ollama.chatModel,
+      searchMode: config.rag?.searchMode ?? null,
+      maxImageWidth: cfg.maxImageWidth,
+      maxStepsPerSession: cfg.maxSteps,
+      visionNumCtx: config.walkthrough?.visionNumCtx ?? null,
+      maxDocsCharsForVision: config.walkthrough?.maxDocsCharsForVision ?? null,
+    },
+  });
+  session.journalPath = journal.path;
 
   logger.event(
     "info",
@@ -299,8 +444,12 @@ export async function start(params = {}, ctx = {}) {
       stepSource: cfg.stepSource,
       docs: docs.docs.length,
       docsSource: docs.source,
+      docsMatched: docs.matched,
+      docsTitles: docs.docs.map((d) => d.title),
       plannedSteps: plan.length,
       purgedScreenshots: purged,
+      journalPath: journal.path,
+      rotatedJournals: journal.rotated,
     },
     `Сесію walkthrough відкрито для «${app.name}»`,
   );
@@ -315,7 +464,14 @@ export async function start(params = {}, ctx = {}) {
     stepSource: cfg.stepSource,
     docs: docs.docs,
     docsSource: docs.source,
+    // Чесна відмова замість мовчазної підміни: інтерфейс має що показати
+    // людині ще до першого кроку.
+    docsMatched: docs.matched,
+    docsMessage: docs.message,
+    docsQuery: docs.query,
+    docsCandidates: docs.candidates,
     screenshotDir: screenshotsDir(),
+    journalPath: journal.path,
   };
 }
 
@@ -399,15 +555,22 @@ function buildStepResponse(
 /**
  * Остання ЗМІСТОВНА інструкція сесії — та, про яку має сенс питати «чи виконано».
  *
- * Кроки, які виставила ОС із `frontmost` («перейдіть у вікно програми»),
- * навмисно пропускаємо: до моменту виклику зору вікно вже точно те, і питати
- * про них немає про що. Питати треба про останню дію В САМІЙ програмі.
+ * Пропускаємо все, що не було дією користувача В САМІЙ програмі:
+ *  - кроки, які виставила ОС із `frontmost` («перейдіть у вікно програми»): до
+ *    моменту виклику зору вікно вже точно те, і питати про них немає про що;
+ *  - повідомлення про відсутню документацію (`decidedBy: "docs"`);
+ *  - кроки в стані `loop` — це не інструкція, а пояснення модуля про те, що
+ *    підказка пішла по колу. Питати модель «чи ви це виконали» про власний
+ *    службовий текст означало б зробити з нього крок.
  */
+const NON_INSTRUCTION_DECIDERS = ["frontmost", "docs"];
+
 function lastMeaningfulInstruction(session) {
   for (let i = session.history.length - 1; i >= 0; i -= 1) {
     const entry = session.history[i];
     if (entry.kind !== "step" && entry.kind !== "stuck") continue;
-    if (entry.decidedBy === "frontmost") continue;
+    if (NON_INSTRUCTION_DECIDERS.includes(entry.decidedBy)) continue;
+    if (entry.state === LOOP_STATE) continue;
     const text = String(entry.instruction || "").trim();
     if (text) return text;
   }
@@ -440,27 +603,46 @@ function confirmPreviousStep(session) {
 function applyProgressGuard(session, fields, { previousInstruction, userConfirmed }) {
   const norm = normalizeInstruction(fields.instruction);
   const sameAsLast = Boolean(norm) && norm === session.lastInstruction;
-  const alreadyConfirmed =
-    Boolean(norm) && session.confirmedSteps.some((text) => normalizeInstruction(text) === norm);
+  // Порівняння з підтвердженими — за словами, а не за рядком: заборонена
+  // інструкція повертається перефразованою (див. matchConfirmedStep).
+  const confirmedMatch = matchConfirmedStep(session, fields.instruction);
+  const alreadyConfirmed = Boolean(confirmedMatch);
 
   session.repeatCount = sameAsLast ? session.repeatCount + 1 : 0;
   session.lastInstruction = norm || null;
 
-  const done = userConfirmed ? true : (fields.previousDone ?? null);
+  // Підтвердження ЛИПКЕ. Раніше слово людини діяло рівно на тому виклику, у
+  // якому натиснули «я це зробив»; на наступному кадрі модель знову казала
+  // «не бачу виконання», ми чесно віддавали `done: false`, і вікно підказки
+  // писало «Модель не бачить, що попередній крок виконано». Питання при цьому
+  // стосувалось кроку, про який людина вже все сказала. Тепер думка моделі про
+  // ПІДТВЕРДЖЕНИЙ крок не питається і не показується взагалі.
+  const previousConfirmedBy = previousInstruction
+    ? matchConfirmedStep(session, previousInstruction)
+    : null;
+  const humanSaidDone = userConfirmed || Boolean(previousConfirmedBy);
+
+  const done = humanSaidDone ? true : (fields.previousDone ?? null);
   const progress = {
     previousInstruction: previousInstruction || null,
     done,
-    by: userConfirmed ? "user" : done === null ? "none" : "vision",
+    by: humanSaidDone ? "user" : done === null ? "none" : "vision",
     note: userConfirmed
       ? "користувач сказав, що вже виконав цей крок"
-      : fields.previousEvidence || null,
+      : previousConfirmedBy
+        ? "цей крок користувач уже підтвердив раніше — думка моделі про нього не питається"
+        : fields.previousEvidence || null,
   };
 
   return {
     progress,
-    // «Не виконано» від моделі зупиняє лічильник; людина його перебиває.
-    advance: userConfirmed || done !== false,
-    looping: !userConfirmed && (sameAsLast || alreadyConfirmed),
+    // «Не виконано» від моделі зупиняє лічильник; людина його перебиває —
+    // і на тому виклику, де натиснула, і на всіх наступних.
+    advance: humanSaidDone || done !== false,
+    looping: sameAsLast || alreadyConfirmed,
+    alreadyConfirmed,
+    confirmedMatch,
+    overriddenByUser: Boolean(previousConfirmedBy) && fields.previousDone === false,
     loopReason: sameAsLast
       ? "та сама інструкція вдруге поспіль"
       : "модель повторює крок, який користувач уже підтвердив як виконаний",
@@ -575,6 +757,13 @@ async function switchStepSource(session, next, ctx) {
     { sessionId: session.sessionId, from, to: next, stepIndex: session.stepIndex, plan: session.plan.length },
     `Режим кроків сесії змінено: ${from} → ${next}`,
   );
+  await logger.walkthroughJournalWrite(session.sessionId, "mode", {
+    from,
+    to: next,
+    stepIndex: session.stepIndex,
+    plan: session.plan.map((entry) => entry.instruction),
+    notes,
+  });
   return { switched: true, notes };
 }
 
@@ -586,7 +775,7 @@ async function switchStepSource(session, next, ctx) {
  * Просування підтверджує сам користувач натисканням «далі» — питати про це
  * модель, яка на екран не дивиться, було б здогадом.
  */
-function manualStep(session, { startedAt, wantDebug, switchNotes = [] }) {
+async function manualStep(session, { startedAt, wantDebug, switchNotes = [] }) {
   const cursor = session.planCursor;
   const previous = cursor > 0 ? session.plan[cursor - 1] : null;
   const planStep = cursor < session.plan.length ? session.plan[cursor] : null;
@@ -640,6 +829,16 @@ function manualStep(session, { startedAt, wantDebug, switchNotes = [] }) {
     source: "plan",
     decidedBy: "plan",
     elapsedMs: response.elapsedMs,
+  });
+  // Запис у журнал — це файл, а не модель і не ОС: правило «ручний режим ні до
+  // кого не звертається» він не порушує, зате саме ручний прогін теж має
+  // лишити слід для розбору.
+  await journalStep(session, "step", {
+    response,
+    fields,
+    stateSource: "plan",
+    decidedBy: "plan",
+    extra: { planned: session.plan.length, expect: response.expect ?? null },
   });
 
   logger.event(
@@ -729,6 +928,51 @@ export async function step(params = {}, ctx = {}) {
 
   if (userConfirmed) confirmPreviousStep(known);
 
+  // Чесна відмова замість мовчазної підміни. Якщо гібридний пошук не знайшов у
+  // довідці ЦІЄЇ програми статті під мету, ми кажемо це прямо і ОДИН раз, а не
+  // підсовуємо в промпт сусідню статтю: саме так людину й повели до «Файл →
+  // Експортувати» замість обрізання відео. Сесія після цього триває — зір ще
+  // може допомогти по самому екрану, — але людина вже знає, на що спирається
+  // підказка.
+  if (known.docsMatched === false && !known.docsMissingReported) {
+    known.docsMissingReported = true;
+    const fields = {
+      state: "unclear",
+      instruction: `${known.docsMessage} Далі підказка спиратиметься лише на те, що видно на екрані.`,
+      target: null,
+      notes: ["документації під мету не знайдено", ...(known.docsNotes || [])],
+    };
+    const response = buildStepResponse(known, fields, {
+      source: known.stepSource,
+      startedAt,
+      debug: wantDebug
+        ? buildDebug({ stateSource: "docs", visionCalls: 0, fields, startedAt })
+        : null,
+    });
+    // Лічильник не зсуваємо: корисного кроку не було, це попередження.
+    commitStep(known, fields, { advance: false, source: known.stepSource, decidedBy: "docs" });
+    await journalStep(known, "step", {
+      response,
+      fields,
+      stateSource: "docs",
+      decidedBy: "docs",
+      extra: { docsQuery: known.docsQuery, docsCandidates: known.docsCandidates },
+    });
+    logger.event(
+      "warn",
+      "walkthrough.docs.missing",
+      {
+        sessionId: known.sessionId,
+        appName: known.appName,
+        goal: known.goal,
+        docsQuery: known.docsQuery,
+        candidates: (known.docsCandidates || []).map((c) => c.title),
+      },
+      `Під мету «${known.goal}» у довідці «${known.appName}» статті немає`,
+    );
+    return response;
+  }
+
   // Яка програма попереду — питання до ОС, а не до зору (docs/contracts/walkthrough.md).
   const match = matchFrontmost(known, params.frontmost);
   const appRunning =
@@ -777,6 +1021,14 @@ export async function step(params = {}, ctx = {}) {
       decidedBy: "frontmost",
       elapsedMs: response.elapsedMs,
     });
+    await journalStep(known, "step", {
+      response,
+      fields: decided,
+      match,
+      stateSource: "frontmost",
+      decidedBy: "frontmost",
+      extra: { appRunning },
+    });
 
     logger.event(
       "info",
@@ -815,6 +1067,13 @@ export async function step(params = {}, ctx = {}) {
         : null,
     });
     commitStep(session, blocked, { advance: false, source: session.stepSource });
+    await journalStep(session, "step", {
+      response,
+      fields: blocked,
+      match,
+      stateSource: "fallback",
+      decidedBy: "fallback",
+    });
     return response;
   }
 
@@ -828,6 +1087,8 @@ export async function step(params = {}, ctx = {}) {
   let answer = null;
   let guard = null;
   let previousInstruction = null;
+  /** Інструкція, яку модуль вирішив НЕ показувати (повтор підтвердженого кроку). */
+  let suppressedInstruction = null;
 
   if (session.stepSource === "plan") {
     const planStep = session.plan[Math.min(session.stepIndex, session.plan.length - 1)];
@@ -872,23 +1133,62 @@ export async function step(params = {}, ctx = {}) {
     // Пряме питання про попередній крок ставиться лише тоді, коли той крок є:
     // на першому кроці питати нема про що, і зайве поле в схемі лише плутало б.
     previousInstruction = lastMeaningfulInstruction(session);
-    promptPair = buildVisionStepPrompt(session, sent, { confirmedApp, previousInstruction });
+
+    // …і лише тоді, коли на нього ще ніхто не відповів. Про крок, який людина
+    // вже підтвердила, модель не питають узагалі: питання закрите так само
+    // остаточно, як питання «яка програма попереду» закриває ОС. Інакше
+    // модель щоразу відповідає «не бачу виконання», і людині показують це як
+    // причину зупинки — попри те, що вона вже сказала протилежне.
+    const previousConfirmedBy = previousInstruction
+      ? matchConfirmedStep(session, previousInstruction)
+      : null;
+    const askAbout = previousConfirmedBy ? null : previousInstruction;
+
+    promptPair = buildVisionStepPrompt(session, sent, {
+      confirmedApp,
+      previousInstruction: askAbout,
+    });
     answer = await askVision({
       prompt: promptPair.prompt,
       system: promptPair.system,
-      schema: visionStepSchema(allowedStates, { askPrevious: Boolean(previousInstruction) }),
+      schema: visionStepSchema(allowedStates, { askPrevious: Boolean(askAbout) }),
       image,
       signal: ctx.signal,
       onProgress,
     });
     fields = toStepFields(answer.parsed, { sent, failure: answer.failure, allowedStates });
     source = "vision";
+    if (previousConfirmedBy) {
+      fields.notes = [
+        ...(fields.notes || []),
+        `про підтверджений крок «${previousConfirmedBy}» модель не питали`,
+      ];
+    }
 
     // Просування і глухий кут — одне рішення, ухвалене з відповіді про
     // попередній крок, а не з припущення, що новий кадр означає новий крок.
     guard = applyProgressGuard(session, fields, { previousInstruction, userConfirmed });
 
-    if (guard.looping && fields.state === "ready") {
+    if (guard.alreadyConfirmed && fields.state !== "done") {
+      // Головне: інструкція, яку людина вже позначила виконаною, НЕ доходить до
+      // неї як новий крок — у жодному формулюванні (порівняння за словами, не
+      // за рядком). Рішення ухвалює модуль, а не промпт: на живому прогоні
+      // модель повертала заборонений крок дослівно, маючи заборону в промпті.
+      suppressedInstruction = fields.instruction;
+      fields = {
+        ...fields,
+        state: LOOP_STATE,
+        target: null,
+        instruction:
+          "Ви вже позначили цей крок виконаним, а модель пропонує його знову — " +
+          "тому ми його не показуємо. Перейдіть у ручний режим: далі вестиме " +
+          "список кроків із довідки, без моделі.",
+        notes: [
+          ...(fields.notes || []),
+          `інструкцію приховано: це повтор підтвердженого кроку «${guard.confirmedMatch}»`,
+        ],
+      };
+    } else if (guard.looping && fields.state === "ready") {
       // Третій однаковий повтор нічого не додасть. Кажемо про це прямо і
       // лишаємо людині два виходи: підтвердити крок або перейти в ручний режим.
       fields = {
@@ -924,6 +1224,7 @@ export async function step(params = {}, ctx = {}) {
           progress: guard ? guard.progress : null,
           repeated: guard ? guard.repeated : null,
           sessionVisionCalls: session.visionCalls,
+          suppressedInstruction,
         })
       : null,
   });
@@ -933,6 +1234,20 @@ export async function step(params = {}, ctx = {}) {
     decidedBy: visionCalls ? "vision" : source,
     raw: answer ? answer.raw : null,
     elapsedMs: response.elapsedMs,
+  });
+  await journalStep(session, "step", {
+    response,
+    fields,
+    promptPair,
+    answer,
+    image,
+    guard,
+    match,
+    suppressedInstruction,
+    stateSource: source === "plan" && !answer ? "fallback" : source,
+    decidedBy: visionCalls ? "vision" : source,
+    model: answer ? config.ollama.visionModel : null,
+    extra: { confirmedApp: Boolean(confirmedApp), allowedStates, visionCalls },
   });
 
   logger.event(
@@ -953,6 +1268,7 @@ export async function step(params = {}, ctx = {}) {
       sent,
       original: { width: image.originalWidth, height: image.originalHeight },
       notes: fields.notes,
+      suppressed: Boolean(suppressedInstruction),
       elapsedMs: response.elapsedMs,
     },
     `Крок ${response.stepIndex} (${response.state}, ${source})`,
@@ -1034,6 +1350,18 @@ export async function stuck(params = {}, ctx = {}) {
     raw: answer.raw,
     elapsedMs: response.elapsedMs,
   });
+  await journalStep(session, "stuck", {
+    response,
+    fields,
+    promptPair,
+    answer,
+    image,
+    match,
+    stateSource: "vision",
+    decidedBy: "vision",
+    model: config.ollama.visionModel,
+    extra: { confirmedApp: Boolean(confirmedApp), allowedStates },
+  });
 
   logger.event(
     "info",
@@ -1102,6 +1430,19 @@ export async function finish(params = {}) {
   const { removedFiles } = await dropSession(session);
   const purged = await purgeScreenshotsDir();
 
+  // Журнал закривається підсумком і лишається на диску — на відміну від
+  // знімків, які саме тут і зникають.
+  const journalPath = await logger.walkthroughJournalClose(session.sessionId, {
+    steps: session.stepIndex,
+    historyEntries: session.history.length,
+    visionCalls: session.visionCalls,
+    confirmedSteps: [...session.confirmedSteps],
+    docsMatched: session.docsMatched ?? null,
+    removedFiles,
+    purgedScreenshots: purged,
+    durationMs: Date.now() - session.createdAt,
+  });
+
   logger.event(
     "info",
     "walkthrough.finish",
@@ -1110,6 +1451,7 @@ export async function finish(params = {}) {
       steps: session.stepIndex,
       removedFiles,
       purgedScreenshots: purged,
+      journalPath,
       durationMs: Date.now() - session.createdAt,
     },
     `Сесію walkthrough закрито (${session.stepIndex} кроків)`,
@@ -1123,6 +1465,7 @@ export async function finish(params = {}) {
     purgedScreenshots: purged,
     durationMs: Date.now() - session.createdAt,
     screenshotDir: screenshotsDir(),
+    journalPath,
   };
 }
 

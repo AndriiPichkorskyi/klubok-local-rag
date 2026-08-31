@@ -34,3 +34,5 @@ sidecar/test-reports/
 # Тимчасове
 _to_delete/
 .env
+
+*capstoneLibrary

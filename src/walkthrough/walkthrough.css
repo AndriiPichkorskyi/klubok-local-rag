@@ -135,11 +135,115 @@
   background: var(--line);
 }
 
+/* ── Навігація по кроках ────────────────────────────────────── */
+/* Стрілки обабіч смужки послідовності. Маленькі й тихі: головне у вікні —
+   інструкція, а не керування. Вимкнена стрілка лишається на місці — так видно
+   межу («далі ще нічого немає»), а кнопки не стрибають з кроку на крок. */
+.wt-trackrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.wt-trackrow .wt-track {
+  flex: 1;
+  min-width: 0;
+}
+.wt-nav-btn {
+  flex: none;
+  width: 22px;
+  padding: 1px 0;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--muted);
+  background: transparent;
+}
+.wt-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Перегляд пройденого. Тоном попередження, бо це не поточний стан справ:
+   людина дивиться назад, а сесія лишилась там, де була. */
+.wt-review {
+  margin: 0;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+/* ── Весь список кроків із довідки ──────────────────────────── */
+/* Ручний режим знає шлях наперед, тому показує його цілком. Список
+   прокручується ВСЕРЕДИНІ себе: витіснити інструкцію він не має права. */
+.wt-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+.wt-plan-toggle {
+  align-self: flex-start;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+.wt-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+  list-style: none;
+}
+.wt-plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+.wt-plan-item[data-done="true"] {
+  color: var(--fg);
+}
+/* Поточний пункт видно з одного погляду — на нього людина й повертається. */
+.wt-plan-item[data-at="true"] {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.wt-plan-num {
+  flex: none;
+  min-width: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.wt-plan-item[data-done="true"] .wt-plan-num {
+  color: var(--accent);
+}
+.wt-plan-text {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ── Крок ───────────────────────────────────────────────────── */
 .wt-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Список кроків довідки може бути довгим. Тіло панелі прокручується
+     всередині себе — так само, як панель діагностики: витіснити інструкцію
+     за межі вікна не має права ніщо. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .wt-step {
   transition: opacity 160ms ease;

@@ -70,10 +70,53 @@ export async function screenCapture(mode = "window") {
 /** Запуск програми: {launched, alreadyRunning, pid}. */
 export const launchApp = (appId) => call("launch_app", { appId });
 
-/** Яка програма зараз попереду: {name, bundleId}. Не критично — лише уточнює текст. */
+/**
+ * Чи можна ЦЕ показати людині як назву програми.
+ *
+ * Друга лінія оборони після Rust (`clean_name` у `src-tauri/src/system.rs`):
+ * у живому прогоні вікно вже написало «зараз попереду «[»» — назвою стала
+ * дужка з виводу `lsappinfo`. Порожнє, самі розділові знаки, службові символи
+ * і початок розмітки назвою не є, і краще не сказати нічого, ніж сказати таке.
+ * Повертає очищену назву або null.
+ */
+export function cleanAppName(value) {
+  const name = String(value ?? "")
+    .replace(/^["\s]+|["\s]+$/g, "")
+    .replace(/:$/, "")
+    .trim();
+  if (!name || name.length > 64) return null;
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(name)) return null;
+  if (!/[\p{L}\p{N}]/u.test(name)) return null; // ані літери, ані цифри — це розмітка
+  if (/^[[\]{}()<>=,;]/.test(name)) return null; // початок структури, а не значення
+  return name;
+}
+
+/**
+ * Як назвати програму, яка зараз попереду, у тексті для людини.
+ * Назва → останній сегмент bundleId (com.apple.Photos → Photos) → «інша
+ * програма». Вигадувати замість назви сміття не можна, а мовчати незручно:
+ * «зараз попереду інша програма» і чесно, і зрозуміло.
+ */
+export function frontmostLabel(front) {
+  const name = cleanAppName(front?.name);
+  if (name) return name;
+  const bundleId = String(front?.bundleId ?? "").trim();
+  const tail = cleanAppName(bundleId.split(".").pop());
+  if (tail && /[\p{L}]/u.test(tail)) return tail;
+  return "інша програма";
+}
+
+/**
+ * Яка програма зараз попереду: {name, bundleId}. Не критично — лише уточнює текст.
+ * Назву пропускаємо через `cleanAppName`: зіпсоване значення не має піти далі
+ * ні у вікно, ні в `walkthrough.step` — бекенд складає з нього текст кроку.
+ */
 export async function frontmostApp() {
   try {
-    return await call("frontmost_app", {});
+    const front = await call("frontmost_app", {});
+    if (!front || typeof front !== "object") return null;
+    return { ...front, name: cleanAppName(front.name) };
   } catch {
     return null; // знати не обов'язково; мовчки живемо без цього
   }
