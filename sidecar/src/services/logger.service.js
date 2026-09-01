@@ -68,6 +68,8 @@ function mb(bytes) {
 
 class LoggerService {
   constructor() {
+    this.queryLogBuffer = [];
+    this.walkthroughJournalBuffer = new Map();
     // Раніше тут був path.resolve("logs") — тека залежала від cwd процесу.
     // З CLI (npm --prefix sidecar) виходило sidecar/logs, а під Tauri, який
     // стартує node з кореня проєкта, логи розповзались у другу теку.
@@ -155,6 +157,18 @@ class LoggerService {
   /** Скидає буфери на диск. При sync:true — запобіжник, не більше. */
   flush() {
     try {
+      if (this.queryLogBuffer && this.queryLogBuffer.length > 0 && this.queryLogFile) {
+        require("fs").appendFileSync(this.queryLogFile, this.queryLogBuffer.join(""), "utf8");
+        this.queryLogBuffer = [];
+      }
+      if (this.walkthroughJournalBuffer) {
+        for (const [file, buf] of this.walkthroughJournalBuffer.entries()) {
+          if (buf.length > 0) {
+            require("fs").appendFileSync(file, buf.join(""), "utf8");
+          }
+        }
+        this.walkthroughJournalBuffer.clear();
+      }
       this.destination?.flushSync?.();
     } catch {
       /* журнал не має права валити процес */
@@ -562,7 +576,16 @@ class LoggerService {
           sessionId: String(sessionId),
           ...this._stripBinary(record),
         }) + "\n";
-      await fs.appendFile(file, line, "utf8");
+      
+      let buf = this.walkthroughJournalBuffer.get(file) || [];
+      buf.push(line);
+      
+      if (buf.length >= 10 || kind === "session.finish") {
+        await fs.appendFile(file, buf.join(""), "utf8");
+        this.walkthroughJournalBuffer.set(file, []);
+      } else {
+        this.walkthroughJournalBuffer.set(file, buf);
+      }
       return true;
     } catch (error) {
       this.event(
@@ -591,28 +614,19 @@ class LoggerService {
    * Логує інформацію про запит, відповідь та зворотній зв'язок.
    * Формат файла queries.log лишився незмінним — його читає історія запитів.
    */
-  async logQueryWithFeedback(
-    query,
-    contextApps,
-    recommendedApp,
-    response,
-    rawLlmOutput,
-    retrievalStats,
-    feedback,
-  ) {
+  async logQueryWithFeedback(query, contextApps, recommendedApp, response, rawLlmOutput, retrievalStats, feedback) {
     try {
-      const logEntry =
-        JSON.stringify({
-          timestamp: new Date().toISOString(),
-          query,
-          contextApps,
-          recommendedApp,
-          response,
-          rawLlmOutput,
-          retrievalStats,
-          feedback,
-        }) + "\n";
-      await fs.appendFile(this.queryLogFile, logEntry, "utf8");
+      const logEntry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        query, contextApps, recommendedApp, response, rawLlmOutput, retrievalStats, feedback
+      }) + "\n";
+      
+      this.queryLogBuffer.push(logEntry);
+      if (this.queryLogBuffer.length >= 10) {
+        await fs.appendFile(this.queryLogFile, this.queryLogBuffer.join(""), "utf8");
+        this.queryLogBuffer = [];
+      }
+
     } catch (err) {
       console.error("Помилка запису логу:", err.message);
       this.event(

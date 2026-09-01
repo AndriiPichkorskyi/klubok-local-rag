@@ -1,5 +1,6 @@
 mod sidecar;
 mod system;
+mod metrics;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,7 +20,9 @@ pub fn run() {
             system::frontmost_app,
             system::overlay_show,
             system::overlay_hide,
-            system::overlay_highlight
+            system::overlay_highlight,
+            metrics::start_metrics,
+            metrics::stop_metrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

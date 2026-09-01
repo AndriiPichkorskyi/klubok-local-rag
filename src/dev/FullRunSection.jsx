@@ -8,7 +8,9 @@
  *
  * Послідовність виконує useFullRun.js звичайними викликами pipeline.* і tests.*.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import Section from "./Section";
 import { ProgressBar, StopButton, CancelNote } from "./OpButton";
 import { opState } from "./useDevRuntime";
@@ -61,18 +63,38 @@ export default function FullRunSection({
   configModel,
   benchmark,
   onFinished,
+  chatModels,
+  configChatModel,
 }) {
   const [selection, setSelection] = useState(defaultSelection);
   const [models, setModels] = useState([]);
+  const [metrics, setMetrics] = useState(null);
+  const [selectedChat, setSelectedChat] = useState([]);
 
+  useEffect(() => {
+    let unlisten;
+    listen("metrics_tick", (event) => {
+      setMetrics(event.payload);
+    }).then(u => unlisten = u);
+    return () => { if (unlisten) unlisten(); };
+  }, []);
+  
   const fullRun = useFullRun({ run, cancelOp, note, onFinished });
   const { entries, state, running, stopping, totalMs } = fullRun;
+
+  useEffect(() => {
+    if (running) {
+      invoke("start_metrics").catch(console.error);
+    } else {
+      invoke("stop_metrics").catch(console.error);
+    }
+  }, [running]);
 
   // Осі бенчмарку їдуть у кроки tests.* параметром: те, що людина бачить у
   // формі, і те, чим піде прогін, — один і той самий об'єкт.
   const plan = useMemo(
-    () => buildPlan(selection, models, configModel, { axes: benchmark?.axesParam || null }),
-    [selection, models, configModel, benchmark?.axesParam],
+    () => buildPlan(selection, models, configModel, { axes: benchmark?.axesParam || null }, selectedChat, configChatModel),
+    [selection, models, configModel, benchmark?.axesParam, selectedChat, configChatModel],
   );
 
   // Запобіжник maxModes спрацював саме на тому тесті, який обрано? Тоді
@@ -92,6 +114,10 @@ export default function FullRunSection({
     setModels((prev) =>
       prev.includes(model) ? prev.filter((item) => item !== model) : prev.concat(model),
     );
+  const toggleChatModel = (model) =>
+    setSelectedChat((prev) =>
+      prev.includes(model) ? prev.filter((item) => item !== model) : prev.concat(model),
+    );
 
   const rows = running || state !== "idle" ? entries : plan.map((step) => ({ ...step, status: "pending" }));
   const runView = RUN_STATE_VIEW[state];
@@ -100,7 +126,7 @@ export default function FullRunSection({
   return (
     <Section
       title="Повний прогін (пайплайн + тести)"
-      hint="кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"
+      hint={metrics && running ? `Виконання... Ollama RAM: ${metrics.ram_mb.toFixed(0)} MB | Energy Score: ${metrics.power_score.toFixed(1)}` : "кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"}
     >
       <div className="dp-check-group">
         <span className="muted dp-small">Кроки пайплайна:</span>
@@ -117,19 +143,38 @@ export default function FullRunSection({
       </div>
 
       <div className="dp-check-group">
-        <span className="muted dp-small">Моделі для векторизації:</span>
+        <span className="muted dp-small">Embed-моделі (для векторизації та/або тестів):</span>
         {embedModels.map((model) => (
           <Checkbox
             key={model}
             checked={models.includes(model)}
             onChange={() => toggleModel(model)}
-            disabled={running || !selection.steps.vectors}
+            disabled={running}
           >
             {model}
             {model === configModel ? " (з конфіга)" : ""}
           </Checkbox>
         ))}
         {models.length === 0 ? (
+          <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
+        ) : null}
+      </div>
+
+      
+      <div className="dp-check-group">
+        <span className="muted dp-small">Chat-моделі для тестування:</span>
+        {chatModels?.map((model) => (
+          <Checkbox
+            key={model}
+            checked={selectedChat.includes(model)}
+            onChange={() => toggleChatModel(model)}
+            disabled={running}
+          >
+            {model}
+            {model === configChatModel ? " (з конфіга)" : ""}
+          </Checkbox>
+        ))}
+        {selectedChat.length === 0 ? (
           <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
         ) : null}
       </div>

@@ -2,17 +2,15 @@
  * Тестування — пункти «🤖 RAG Benchmark» і «🧬 EXTERNAL тестування» з CLI.
  * Обидва методи довгі; прогрес іде у спільний журнал, панель лишається живою.
  */
+import { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { rpc } from "../ipc";
 import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { BenchmarkPlanSummary } from "./BenchmarkAxesForm";
 
-/**
- * tests.run і tests.runExternal повертають
- * {ok, totalCases, passed, failed, passRate, reportPath}.
- * Булеве значення лишилось у гілці сумісності зі старою поведінкою.
- */
 function verdict(result) {
   if (result && typeof result === "object") {
     const { ok, totalCases, passed, failed, passRate } = result;
@@ -32,13 +30,27 @@ function verdict(result) {
   return null;
 }
 
-export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished }) {
+export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished, chatModels, configChatModel }) {
+  const [metrics, setMetrics] = useState(null);
+
+  useEffect(() => {
+    let unlisten;
+    listen("metrics_tick", (event) => {
+      setMetrics(event.payload);
+    }).then(u => unlisten = u);
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+  
+  useEffect(() => {
+    invoke("start_metrics").catch(console.error);
+    return () => invoke("stop_metrics").catch(console.error);
+  }, []);
+
   const rag = opState(ops, "tests.run");
   const external = opState(ops, "tests.runExternal");
 
-  // Обидва методи беруть ту саму матрицю, що й повний прогін: осі задаються
-  // у секції «Повний прогін», а сюди приходять уже готовим параметром.
-  // Порожньо = бекенд бере осі з конфіга.
   const axes = benchmark?.axesParam || null;
   const start = (method, label) =>
     run(method, label, async (ref) => {
@@ -54,7 +66,10 @@ export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished
   };
 
   return (
-    <Section title="Тестування" hint="детальний вивід — у терміналі sidecar">
+    <Section 
+      title="Тестування" 
+      hint={metrics ? `Ollama RAM: ${metrics.ram_mb.toFixed(0)} MB | Energy Score: ${metrics.power_score.toFixed(1)}` : "Очікування метрик..."}
+    >
       <div className="dp-grid">
         <OpButton
           op={rag}
@@ -77,7 +92,6 @@ export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished
         </OpButton>
       </div>
 
-      {/* Ціна прогону тут теж: кнопка запускає ту саму матрицю, що й повний прогін. */}
       {benchmark ? (
         <BenchmarkPlanSummary
           benchmark={benchmark}

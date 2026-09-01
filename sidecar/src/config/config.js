@@ -39,13 +39,20 @@ export function buildConfig() {
   const file = readConfigFile();
   const embedModel = process.env.EMBED_MODEL || file.embedModelName;
 
-  return {
+  const configObj = {
     embedModelName: embedModel,
     db: {
       sqlitePath: path.join(SIDECAR_DIR, "rag_metadata.sqlite"),
-      lancedbPath: path.join(SIDECAR_DIR, `lancedb_data_${embedModel.replace(":", "_")}`),
+      get lancedbPath() {
+        return path.join(SIDECAR_DIR, `lancedb_data_${configObj.embedModelName.replace(":", "_")}`);
+      },
     },
-    ollama: { ...file.ollama, embedModel },
+    ollama: {
+      ...file.ollama,
+      get embedModel() {
+        return configObj.embedModelName;
+      },
+    },
     rpc: {
       ...file.rpc,
       port: Number(process.env.RPC_PORT || file.rpc.port),
@@ -57,6 +64,8 @@ export function buildConfig() {
     walkthrough: file.walkthrough,
     paths: { sidecarDir: SIDECAR_DIR, projectDir: PROJECT_DIR, configPath: CONFIG_PATH },
   };
+  
+  return configObj;
 }
 
 export let config = buildConfig();
@@ -69,5 +78,32 @@ export function reloadConfig() {
   const next = buildConfig();
   Object.keys(config).forEach((key) => delete config[key]);
   Object.assign(config, next);
+  return config;
+}
+
+/**
+ * Оновлює моделі у файлі конфігурації та перезавантажує конфіг.
+ */
+export function updateModels({ embedModel, chatModel, visionModel }) {
+  const current = readConfigFile();
+  let changed = false;
+
+  if (embedModel && current.embedModelName !== embedModel) {
+    current.embedModelName = embedModel;
+    changed = true;
+  }
+  if (chatModel && current.ollama.chatModel !== chatModel) {
+    current.ollama.chatModel = chatModel;
+    changed = true;
+  }
+  if (visionModel && current.ollama.visionModel !== visionModel) {
+    current.ollama.visionModel = visionModel;
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(current, null, 2));
+    reloadConfig();
+  }
   return config;
 }

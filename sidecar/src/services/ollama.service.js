@@ -191,7 +191,13 @@ class OllamaService {
       options: {
         temperature: Number.isFinite(Number(temperature)) ? Number(temperature) : 0.1,
         num_ctx: 4096,
-        num_predict: 400,
+        num_predict: 9192,
+        // Скидаємо штрафи, які можуть бути "зашиті" в Modelfile цієї моделі.
+        // Високий presence_penalty (як 1.5 у логах) штрафує символ `{`,
+        // через що граматика вимушено генерує безкінечні пробіли замість JSON.
+        presence_penalty: 0.0,
+        frequency_penalty: 0.0,
+        repeat_penalty: 1.0,
       },
     };
 

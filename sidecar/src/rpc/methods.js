@@ -14,7 +14,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-import { config, reloadConfig } from "../config/config.js";
+import { config, reloadConfig, updateModels } from "../config/config.js";
 import { db } from "../services/db.service.js";
 import { check as bootstrapCheck, pullModel as bootstrapPullModel } from "../bootstrap/index.js";
 import { processQuery } from "../modules/rag/engine.js";
@@ -30,6 +30,7 @@ import * as walkthrough from "../modules/walkthrough/index.js";
 import { runRagTests } from "../tests/test-rag.js";
 import { runExternalTests } from "../tests/test-external.js";
 import { planBenchmark } from "../tests/benchmark-plan.js";
+import { ollama } from "../services/ollama.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Корінь sidecar/src — звідти дістаємо допоміжні скрипти */
@@ -265,6 +266,22 @@ export const methods = {
     return reloadConfig();
   },
 
+  async "ollama.getModels"() {
+    const status = await ollama.checkAvailability();
+    return status.installedModels || [];
+  },
+
+  async "config.updateModels"(params) {
+    const { embedModel, chatModel, visionModel } = params;
+    if (embedModel) {
+      // Ensure the vector column exists BEFORE saving config and using the model
+      const colName = `vectorized_${embedModel.replace(/:/g, "_").toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      await db.addColumnIfMissing("apps", `${colName} BOOLEAN DEFAULT 0`);
+    }
+    const newConfig = updateModels({ embedModel, chatModel, visionModel });
+    return newConfig;
+  },
+
   /**
    * RAG-пошук: обгортка над processQuery().
    * `searchMode` і `excludeLocal` не обов'язкові: null означає «взяти з конфіга».
@@ -369,6 +386,7 @@ export const methods = {
     ctx.onProgress("Запуск RAG-бенчмарку...", 0);
     return await runRagTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
       axes: params.axes ?? null,
+      signal: ctx.signal,
     });
   },
 
@@ -377,6 +395,7 @@ export const methods = {
     ctx.onProgress("Запуск EXTERNAL-тестів...", 0);
     return await runExternalTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
       axes: params.axes ?? null,
+      signal: ctx.signal,
     });
   },
 

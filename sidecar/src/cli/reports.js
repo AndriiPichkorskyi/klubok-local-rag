@@ -20,7 +20,7 @@ export function renderReportTable(reportData) {
   const modeNames = Object.keys(reportData.modes || {});
   const MODE_COL = Math.max(25, ...modeNames.map((name) => name.length + 2));
   // Решта колонок: 16 + 18 + 18 + 12 + 8 (RAM) — стільки ж, скільки було.
-  const RULE = MODE_COL + 76;
+  const RULE = MODE_COL + 90;
 
   console.log("\n" + "=".repeat(RULE + 5));
   console.log(pc.bold(`📊 ПІДСУМКОВЕ ПОРІВНЯННЯ РЕЖИМІВ (SEARCH MODES):`));
@@ -31,10 +31,11 @@ export function renderReportTable(reportData) {
   console.log(
     pc.bold("Режим".padEnd(MODE_COL)) +
       pc.bold("Успішність".padEnd(16)) +
-      pc.bold("Час (Заг/Сер)".padEnd(18)) +
+      pc.bold("Час (Заг/Сер)".padEnd(16)) +
       pc.bold("In/Out Токени".padEnd(18)) +
       pc.bold("Швидкість".padEnd(12)) +
-      pc.bold("RAM"),
+      pc.bold("Ollama RAM".padEnd(12)) +
+      pc.bold("Energy"),
   );
   console.log("-".repeat(RULE));
 
@@ -59,13 +60,17 @@ export function renderReportTable(reportData) {
     else if (s.passRate >= 50) passRateStr = pc.yellow(passRateText);
     else passRateStr = pc.red(passRateText);
 
+    const ramText = s.avgSysRam ? `${Math.round(s.avgSysRam)} MB` : "-";
+    const powerText = s.avgSysPower ? s.avgSysPower.toFixed(1) : "-";
+
     console.log(
       mode.padEnd(MODE_COL) +
         passRateStr +
-        `${totalTimeSec}c / ${avgTime}c`.padEnd(18) +
+        `${totalTimeSec}c / ${avgTime}c`.padEnd(16) +
         `${s.totalInputTokens} / ${s.totalOutputTokens}`.padEnd(18) +
-        `${s.avgTps.toFixed(1)} t/s`.padEnd(12) +
-        `${Math.round(s.avgMem)} MB`,
+        `${s.avgTps?.toFixed(1) || "-"} t/s`.padEnd(12) +
+        ramText.padEnd(12) +
+        powerText,
     );
   }
 

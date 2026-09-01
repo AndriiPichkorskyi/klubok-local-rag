@@ -28,16 +28,16 @@
 .dp-title { font-weight: 600; }
 
 .dp-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  display: flex;
+  flex-direction: row;
   gap: 12px;
   padding: 12px;
-  min-height: 0; /* щоб внутрішні колонки могли скорочуватись і прокручуватись */
+  min-height: 0;
   flex: 1 1 auto;
 }
 
 @media (max-width: 900px) {
-  .dp-body { grid-template-columns: minmax(0, 1fr); }
+  .dp-body { flex-direction: column; }
 }
 
 .dp-col {
@@ -47,6 +47,66 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.dp-col-main {
+  flex: 0 0 calc(var(--split-size) - 6px); /* subtract half gap */
+}
+
+.dp-col-log {
+  flex: 1 1 0;
+  overflow: hidden;
+}
+
+/* Спліттер між колонками */
+.dp-splitter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  flex: 0 0 12px; /* size of the gap */
+  margin: 0 -6px; /* pull into gap */
+  cursor: col-resize;
+  z-index: 10;
+  position: relative;
+  touch-action: none;
+}
+
+.dp-splitter-icon {
+  width: 4px;
+  height: 24px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.15s;
+}
+
+.dp-splitter:hover .dp-splitter-icon,
+.dp-splitter:active .dp-splitter-icon {
+  background: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .dp-body { flex-direction: column; }
+  
+  .dp-col-main {
+    flex: 0 0 calc(var(--split-size) - 6px);
+  }
+  
+  .dp-col-log {
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+
+  .dp-splitter {
+    cursor: row-resize;
+    margin: -6px 0;
+    width: 100%;
+  }
+
+  .dp-splitter-icon {
+    width: 24px;
+    height: 4px;
+  }
 }
 
 /* Секція — проста картка з рамкою. */

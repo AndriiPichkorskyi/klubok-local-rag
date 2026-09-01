@@ -2,7 +2,7 @@
  * Конфіг: показати поточний (config.get) і перечитати з диска (config.reload).
  * Токен RPC у виводі маскуємо — панель відкрита на екрані.
  */
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { rpc } from "../ipc";
 import Section from "./Section";
 import OpButton from "./OpButton";
@@ -13,7 +13,9 @@ import { maskSecrets } from "./format";
 function highlights(config) {
   if (!config || typeof config !== "object") return [];
   return [
-    ["Модель ембедингу", config.embedModelName],
+    ["Модель векторів", config.embedModelName],
+    ["Чат-модель", config.ollama?.chatModel],
+    ["Модель зору", config.ollama?.visionModel],
     ["Ollama", config.ollama?.baseUrl],
     ["RPC", config.rpc ? `${config.rpc.host}:${config.rpc.port}` : undefined],
     ["Режим пошуку", config.rag?.searchMode],
@@ -26,11 +28,47 @@ function highlights(config) {
 export default function ConfigSection({ ops, run, cancelOp, config }) {
   const getOp = opState(ops, "config.get");
   const reloadOp = opState(ops, "config.reload");
+  const [allModels, setAllModels] = useState([]);
 
   // Конфіг легкий, тож тягнемо його одразу — панель від цього не блокується.
   useEffect(() => {
     run("config.get", "Конфіг", (ref) => rpc("config.get", {}, ref));
+    // Завантажуємо моделі
+    rpc("ollama.getModels").then((models) => {
+      if (Array.isArray(models)) setAllModels(models);
+    }).catch(err => console.error("Failed to load models", err));
   }, [run]);
+
+  const embedModels = useMemo(() => {
+    const filtered = allModels.filter(m => m.includes("embed") || m.includes("bge"));
+    return filtered.length > 0 ? filtered : allModels;
+  }, [allModels]);
+
+  const visionModels = useMemo(() => {
+    const filtered = allModels.filter(m => m.includes("vl") || m.includes("vision") || m.includes("llava"));
+    return filtered.length > 0 ? filtered : allModels;
+  }, [allModels]);
+
+  const updateModel = (type, value) => {
+    if (!value) return;
+    const payload = {};
+    if (type === "embed") payload.embedModel = value;
+    if (type === "chat") payload.chatModel = value;
+    if (type === "vision") payload.visionModel = value;
+    
+    // Використовуємо ключ "config.reload", щоб DevPanel.jsx підхопив оновлений стан.
+    run("config.reload", `Зміна моделі (${type})`, async (ref) => {
+      await rpc("config.updateModels", payload, ref);
+      return rpc("config.get", {}, ref);
+    });
+  };
+
+  const renderSelect = (label, current, options, type) => (
+    <select value={current || ""} onChange={(e) => updateModel(type, e.target.value)}>
+      <option value="" disabled>Оберіть модель</option>
+      {[...new Set([current, ...options])].filter(Boolean).map(m => <option key={m} value={m}>{m}</option>)}
+    </select>
+  );
 
   return (
     <Section title="Конфігурація">
@@ -55,7 +93,12 @@ export default function ConfigSection({ ops, run, cancelOp, config }) {
             {highlights(config).map(([label, value]) => (
               <div key={label} style={{ display: "contents" }}>
                 <dt>{label}</dt>
-                <dd>{String(value)}</dd>
+                <dd>
+                  {label === "Модель векторів" ? renderSelect(label, value, embedModels, "embed")
+                   : label === "Чат-модель" ? renderSelect(label, value, allModels, "chat")
+                   : label === "Модель зору" ? renderSelect(label, value, visionModels, "vision")
+                   : String(value)}
+                </dd>
               </div>
             ))}
           </dl>

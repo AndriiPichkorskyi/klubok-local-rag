@@ -73,10 +73,25 @@ export function createReportStream(filePath, header) {
     });
   }
 
-  function enqueue(text) {
-    chain = chain.then(() => writeChunk(text));
+  
+  let chunkBuffer = [];
+  const BATCH_SIZE = 10;
+
+  function flushBuffer() {
+    if (chunkBuffer.length === 0) return Promise.resolve();
+    const text = chunkBuffer.join("");
+    chunkBuffer = [];
+    return writeChunk(text);
+  }
+
+  function enqueue(text, forceFlush = false) {
+    chunkBuffer.push(text);
+    if (chunkBuffer.length >= BATCH_SIZE || forceFlush) {
+      chain = chain.then(() => flushBuffer());
+    }
     return chain;
   }
+  
 
   // Заголовок пишеться в тому порядку, в якому його передали: так порядок
   // ключів у файлі однаковий для будь-якого набору полів.
@@ -134,12 +149,13 @@ export function createReportStream(filePath, header) {
      * @param {Object} footer - додаткові поля ПІСЛЯ `modes` (seedGroups тощо).
      */
     async close(footer = {}) {
+      await enqueue("", true); // force flush
       if (closed) return filePath;
       closed = true;
       const footerLines = Object.entries(footer).map(
         ([key, value]) => `,\n  ${JSON.stringify(key)}: ${JSON.stringify(value)}`,
       );
-      await enqueue((firstMode ? "}" : "\n  }") + footerLines.join("") + "\n}\n");
+      await enqueue((firstMode ? "}" : "\n  }") + footerLines.join("") + "\n}\n", true);
       await new Promise((resolve) => stream.end(resolve));
       if (streamError) throw streamError;
       await fs.rename(partialPath, filePath);

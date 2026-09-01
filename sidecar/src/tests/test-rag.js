@@ -43,6 +43,12 @@ import { createHash } from "crypto";
  *                    failed: number, passRate: number, reportPath: string}>}
  */
 export async function runRagTests(onProgress = () => {}, options = {}) {
+  // Override models if requested
+  const savedChatModel = config.ollama.chatModel;
+  const savedEmbedModel = config.embedModelName;
+  if (options.overrideChatModel) config.ollama.chatModel = options.overrideChatModel;
+  if (options.overrideEmbedModel) config.embedModelName = options.overrideEmbedModel;
+
   console.log(pc.bgCyan(pc.black(" ЗАПУСК АВТОМАТИЗОВАНОГО ТЕСТУВАННЯ RAG")));
 
   const status = await ollama.checkAvailability();
@@ -218,7 +224,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       let failed = 0;
       const startTime = Date.now();
       // Замість масиву результатів — лічильники: усе інше вже на диску.
-      const acc = { count: 0, tpsSum: 0, memSum: 0, inputTokens: 0, outputTokens: 0 };
+      const acc = { count: 0, tpsSum: 0, ttftSum: 0, memSum: 0, sysRamSum: 0, sysPowerSum: 0, inputTokens: 0, outputTokens: 0 };
 
       const CONCURRENCY = config.rag.testConcurrency;
 
@@ -227,6 +233,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
 
       const batchPromises = TEST_CASES.map((test) =>
         limit(async () => {
+          if (options.signal?.aborted) throw options.signal.reason;
           const testIndex = testIndexCounter++;
           // Зерно цього конкретного запиту: значення осі або нове випадкове.
           const caseSeed = nextSeedFor(modeObj);
@@ -253,11 +260,18 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             }
           }
           const memUsageMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+          let sysMetrics = {};
+          try {
+            const metricsJson = await fs.readFile("/tmp/ollama_metrics.json", "utf8");
+            sysMetrics = JSON.parse(metricsJson);
+          } catch (e) {
+            // Файл може бути заблокований або ще не створений
+          }
 
           const { response, recommendedApp, rawLlmOutput, retrievalStats } = result;
 
           console.log(
-            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${TEST_CASES.length}:`)} "${test.query}"`,
+            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${TEST_CASES.length}:`)} "${test.query}"`
           );
 
           let isSuccess = false;
@@ -321,7 +335,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             }
           }
 
-          const metricsStr = `[${(queryTime / 1000).toFixed(1)}c | TTFT: ${ttft > 0 ? ttft.toFixed(2) + "c" : "N/A"} | ${tps > 0 ? tps.toFixed(1) + " t/s" : "N/A"} | RAM: ${memUsageMB}MB]`;
+          const metricsStr = `[${(queryTime / 1000).toFixed(1)}c | TTFT: ${ttft > 0 ? ttft.toFixed(2) + "c" : "N/A"} | ${tps > 0 ? tps.toFixed(1) + " t/s" : "N/A"} | Node RAM: ${memUsageMB}MB | Ollama RAM: ${Math.round(sysMetrics.ram_mb || 0)}MB]`;
 
           if (isSuccess) {
             console.log(
@@ -382,6 +396,8 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             inputTokens,
             outputTokens,
             memoryUsageMB: memUsageMB,
+            sysOllamaRamMB: sysMetrics.ram_mb || 0,
+            sysPowerScore: sysMetrics.power_score || 0,
             llmResponse: response,
             rawLlmOutput: rawLlmOutput,
             rawOutputHash,
@@ -405,7 +421,10 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
           // Результат одразу лягає на диск і більше не тримається в пам'яті.
           acc.count += 1;
           acc.tpsSum += tps;
+          acc.ttftSum += ttft;
           acc.memSum += memUsageMB;
+          acc.sysRamSum += (sysMetrics.ram_mb || 0);
+          acc.sysPowerSum += (sysMetrics.power_score || 0);
           acc.inputTokens += inputTokens;
           acc.outputTokens += outputTokens;
           await report.addResult(resObj);
@@ -426,13 +445,12 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
         failed,
         passRate,
         totalTimeMs: totalTime,
-        // Те саме число, але під однозначною назвою: у EXTERNAL-тесті
-        // `totalTimeMs` історично означає СУМУ тривалостей кейсів, а не
-        // час «від першого до останнього». Оцінка часу прогону (tests.plan)
-        // рахується саме з wallTimeMs, тож обидва тести дають її однаково.
         wallTimeMs: totalTime,
         avgTps: acc.tpsSum / divisor,
+        avgTtft: acc.ttftSum / divisor,
         avgMem: acc.memSum / divisor,
+        avgSysRam: acc.sysRamSum / divisor,
+        avgSysPower: acc.sysPowerSum / divisor,
         totalInputTokens: acc.inputTokens,
         totalOutputTokens: acc.outputTokens,
         byLanguage: langTally.snapshot(),
@@ -597,6 +615,8 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
   } finally {
     // Відновлюємо конфіг навіть якщо тест упав посередині.
     Object.assign(config.rag, savedRag);
+    config.ollama.chatModel = savedChatModel;
+    config.embedModelName = savedEmbedModel;
     // Прогін обірвався — не лишаємо відкритий дескриптор. Недописаний звіт
     // лишається файлом *.json.partial: він не ламає reports.list, але
     // показує, докуди дійшли.

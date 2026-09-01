@@ -451,14 +451,17 @@ class DbService {
       // Міграції для старих баз. Єдина помилка, яку тут можна ігнорувати, —
       // «колонка вже існує»; решта мусить бути видимою.
       await this.addColumnIfMissing("apps", "toc_fetched BOOLEAN DEFAULT 0");
-      await this.addColumnIfMissing("apps", "vectorized_4b BOOLEAN DEFAULT 0");
-      await this.addColumnIfMissing("apps", "vectorized_0_6b BOOLEAN DEFAULT 0");
       await this.addColumnIfMissing("apps", "keywords TEXT");
       await this.addColumnIfMissing("apps", "helpBookFolder TEXT");
       await this.addColumnIfMissing("document_links", "sourceType TEXT DEFAULT 'WEB'");
+      
+      // Динамічно додаємо колонку для поточної моделі
+      const currentCol = vectorizedColumnFor(config.embedModelName);
+      await this.addColumnIfMissing("apps", `${currentCol} BOOLEAN DEFAULT 0`);
 
       // 2. Ініціалізація LanceDB (для векторів)
-      this.lanceDb = await lancedb.connect(config.db.lancedbPath);
+      this._currentLanceDbPath = config.db.lancedbPath;
+      this.lanceDb = await lancedb.connect(this._currentLanceDbPath);
 
       // Перевіряємо, чи існує таблиця
       const tableNames = await this.lanceDb.tableNames();
@@ -474,6 +477,27 @@ class DbService {
     } catch (error) {
       console.error("Помилка ініціалізації баз даних:", error);
       throw error;
+    }
+  }
+
+  /**
+   * Перевіряє, чи не змінилася модель векторів (шлях до LanceDB).
+   * Якщо змінилася (через зміну config у тестах), перепідключає LanceDB.
+   */
+  async ensureLanceDbConnected() {
+    const expectedPath = config.db.lancedbPath;
+    if (this._currentLanceDbPath !== expectedPath) {
+      this.lanceDb = await lancedb.connect(expectedPath);
+      this.table = null;
+      const tableNames = await this.lanceDb.tableNames();
+      if (tableNames.includes(this.tableName)) {
+        this.table = await this.lanceDb.openTable(this.tableName);
+      }
+      this._currentLanceDbPath = expectedPath;
+      
+      // Також створюємо колонку в SQLite для нової моделі, щоб уникнути помилок `no such column`
+      const currentCol = vectorizedColumnFor(config.embedModelName);
+      await this.addColumnIfMissing("apps", `${currentCol} BOOLEAN DEFAULT 0`);
     }
   }
 
@@ -499,6 +523,8 @@ class DbService {
    */
   async saveChunks(chunks, { replaceAppChunks = true } = {}) {
     if (chunks.length === 0) return;
+
+    await this.ensureLanceDbConnected();
 
     const appName = chunks[0]?.appName;
 
@@ -534,6 +560,7 @@ class DbService {
 
   // Пошук найбільш схожих чанків за вектором запиту
   async searchSimilar(queryVector, limit = config.rag.topK, excludeLocal = false) {
+    await this.ensureLanceDbConnected();
     if (!this.table) return [];
 
     let q = this.table.search(queryVector).limit(limit);
@@ -644,6 +671,7 @@ class DbService {
 
   async clearTableUnlocked(tableName) {
     if (tableName === "lancedb") {
+      await this.ensureLanceDbConnected();
       const tableNames = await this.lanceDb.tableNames();
       if (tableNames.includes(this.tableName)) {
         await this.lanceDb.dropTable(this.tableName);
@@ -694,6 +722,7 @@ class DbService {
     
     // 3. Видаляємо з FTS та LanceDB
     await this.sqliteDb.run("DELETE FROM chunks_fts WHERE sourceType = ?", [type]);
+    await this.ensureLanceDbConnected();
     if (this.table) {
       try {
         await this.table.delete(`sourceType = '${type}'`);
@@ -719,6 +748,7 @@ class DbService {
    * прогоні — інакше другий прогін додав би другий комплект рядків.
    */
   async clearIntentChunks() {
+    await this.ensureLanceDbConnected();
     if (this.table) {
       try {
         await this.table.delete("docId = -1");
@@ -883,6 +913,7 @@ class DbService {
     );
 
     // Чанки LanceDB поточної моделі — поле лишається таким, як було.
+    await this.ensureLanceDbConnected();
     let chunksCount = 0;
     if (this.table) {
       chunksCount = await this.table.countRows();

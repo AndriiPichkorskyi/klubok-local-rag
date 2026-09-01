@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDevRuntime } from "./useDevRuntime";
 import { useBenchmarkAxes } from "./useBenchmarkAxes";
+import { Splitter, useSplitter } from "./Splitter";
 import DevTabs from "./DevTabs";
 import ProgressLog from "./ProgressLog";
 import SidecarSection from "./SidecarSection";
@@ -94,14 +95,15 @@ function readStoredTab() {
   return TABS[0].id;
 }
 
-/** Моделі ембедингу з конфіга: required + optional, лише embedding-моделі. */
-function embedModelsOf(config) {
+/** Моделі ембедингу з конфіга та Ollama */
+function embedModelsOf(config, allModels = []) {
   const declared = [
     ...(config?.bootstrap?.requiredModels || []),
     ...(config?.bootstrap?.optionalModels || []),
-  ].filter((model) => model.includes("embedding"));
+    ...allModels,
+  ].filter((model) => model.includes("embed") || model.includes("bge"));
 
-  const list = declared.length > 0 ? declared : FALLBACK_EMBED_MODELS;
+  const list = [...new Set(declared.length > 0 ? declared : FALLBACK_EMBED_MODELS)];
   const current = config?.embedModelName;
   return current && !list.includes(current) ? [current, ...list] : list;
 }
@@ -171,7 +173,20 @@ export default function DevPanel() {
     return newest?.result && typeof newest.result === "object" ? newest.result : null;
   }, [ops]);
 
-  const embedModels = useMemo(() => embedModelsOf(config), [config]);
+  const [allModels, setAllModels] = useState([]);
+  useEffect(() => {
+    import("../ipc").then(({ rpc }) => {
+      rpc("ollama.getModels").then((models) => {
+        if (Array.isArray(models)) setAllModels(models);
+      }).catch(err => console.error(err));
+    });
+  }, []);
+
+  const embedModels = useMemo(() => embedModelsOf(config, allModels), [config, allModels]);
+  const chatModels = useMemo(() => {
+    const list = allModels.filter(m => !m.includes("embed") && !m.includes("bge") && !m.includes("vision") && !m.includes("vl") && !m.includes("llava"));
+    return [...new Set(list.length > 0 ? list : allModels)];
+  }, [allModels]);
 
   // Осі бенчмарку живуть на рівні панелі: форма стоїть у секції прогону, а
   // кнопки в «Тестуванні» запускають рівно ту саму матрицю. Два незалежні
@@ -199,6 +214,8 @@ export default function DevPanel() {
     </div>
   );
 
+  const { size: splitSize, containerRef: splitContainerRef, startDrag } = useSplitter(60);
+
   return (
     <main className="dp-root">
       <header className="dp-head">
@@ -215,8 +232,8 @@ export default function DevPanel() {
 
       <DevTabs tabs={TABS} active={activeTab} onSelect={selectTab} runningCounts={runningCounts} />
 
-      <div className="dp-body">
-        <div className="dp-col" ref={colRef}>
+      <div className="dp-body" ref={splitContainerRef} style={{ "--split-size": `${splitSize}%` }}>
+        <div className="dp-col dp-col-main" ref={colRef}>
           {pane(
             "run",
             <>
@@ -225,7 +242,7 @@ export default function DevPanel() {
                 run={run}
                 cancelOp={cancelOp}
                 note={note}
-                embedModels={embedModels}
+                embedModels={embedModels} chatModels={chatModels} configChatModel={config?.ollama?.chatModel || null}
                 configModel={config?.embedModelName || null}
                 benchmark={benchmark}
                 onFinished={onFullRunFinished}
@@ -260,7 +277,9 @@ export default function DevPanel() {
           )}
         </div>
 
-        <div className="dp-col" style={{ overflowY: "hidden" }}>
+        <Splitter onPointerDown={startDrag} />
+
+        <div className="dp-col dp-col-log">
           <ProgressLog entries={logEntries} dropped={logDropped} onClear={clearLog} />
         </div>
       </div>

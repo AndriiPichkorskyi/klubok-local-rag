@@ -129,6 +129,12 @@ export async function loadExternalCases() {
  *                    failed: number, passRate: number, reportPath: string}>}
  */
 export async function runExternalTests(onProgress = () => {}, options = {}) {
+  // Override models if requested
+  const savedChatModel = config.ollama.chatModel;
+  const savedEmbedModel = config.embedModelName;
+  if (options.overrideChatModel) config.ollama.chatModel = options.overrideChatModel;
+  if (options.overrideEmbedModel) config.embedModelName = options.overrideEmbedModel;
+
   console.log(pc.bgCyan(pc.black(" ЗАПУСК EXTERNAL ТЕСТУВАННЯ (матриця режимів) ")));
 
   // Перевірка моделі (якщо користувач має на увазі embedding модель 4b)
@@ -310,6 +316,8 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
         tpsSum: 0,
         tpsCount: 0,
         memSum: 0,
+        sysRamSum: 0,
+        sysPowerSum: 0,
         inputTokens: 0,
         outputTokens: 0,
       };
@@ -320,6 +328,7 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
 
       const batchPromises = TEST_CASES.map((test) =>
         limit(async () => {
+          if (options.signal?.aborted) throw options.signal.reason;
           const testIndex = testIndexCounter++;
           // Зерно цього конкретного запиту: значення осі або нове випадкове.
           const caseSeed = nextSeedFor(modeObj);
@@ -345,6 +354,13 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
             }
           }
           const memUsageMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+          let sysMetrics = {};
+          try {
+            const metricsJson = await fs.readFile("/tmp/ollama_metrics.json", "utf8");
+            sysMetrics = JSON.parse(metricsJson);
+          } catch (e) {
+            // Файл може бути заблокований або ще не створений
+          }
 
           const { response, recommendedApp, rawLlmOutput } = result;
           // Той самий побайтовий відбиток відповіді, що й у RAG-бенчмарку.
@@ -355,7 +371,7 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
           modeHashes.set(test.query, rawOutputHash);
 
           console.log(
-            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${TEST_CASES.length} | ${test.category}:`)} "${test.query}" -> ${pc.yellow(recommendedApp)}`,
+            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${TEST_CASES.length} | ${test.category}:`)} "${test.query}" -> ${pc.yellow(recommendedApp)}`
           );
           doneRuns++;
           onProgress(
@@ -411,16 +427,20 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
           if (isSuccess) passed++;
           else failed++;
 
+          const metricsStr = `[${(queryTime / 1000).toFixed(1)}c | TTFT: ${ttft > 0 ? ttft.toFixed(2) + "c" : "N/A"} | ${tps > 0 ? tps.toFixed(1) + " t/s" : "N/A"} | Node RAM: ${memUsageMB}MB | Ollama RAM: ${Math.round(sysMetrics.ram_mb || 0)}MB]`;
+
           if (!isSuccess) {
-            console.log(pc.red(`   ❌ ФЕЙЛ: ${reason}`));
+            console.log(pc.red(`   ❌ ФЕЙЛ: ${reason}`) + pc.gray(` ${metricsStr}`));
           } else {
-            console.log(pc.green(`   ✅ ПАС`));
+            console.log(pc.green(`   ✅ ПАС`) + pc.gray(` ${metricsStr}`));
           }
 
           // Результат одразу лягає на диск і більше не тримається в пам'яті.
           acc.count += 1;
           acc.timeMs += queryTime;
           acc.memSum += memUsageMB;
+          acc.sysRamSum += (sysMetrics.ram_mb || 0);
+          acc.sysPowerSum += (sysMetrics.power_score || 0);
           acc.inputTokens += inputTokens;
           acc.outputTokens += outputTokens;
           if (tps > 0) {
@@ -450,6 +470,8 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
             ttft,
             tps,
             memory: memUsageMB,
+            sysOllamaRamMB: sysMetrics.ram_mb || 0,
+            sysPowerScore: sysMetrics.power_score || 0,
             inputTokens,
             outputTokens,
             rawOutputHash,
@@ -475,6 +497,8 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
         wallTimeMs,
         avgTps: acc.tpsCount > 0 ? acc.tpsSum / acc.tpsCount : 0,
         avgMem: acc.memSum / (acc.count || 1),
+        avgSysRam: acc.sysRamSum / (acc.count || 1),
+        avgSysPower: acc.sysPowerSum / (acc.count || 1),
         totalInputTokens: acc.inputTokens,
         totalOutputTokens: acc.outputTokens,
         byLanguage: langTally.snapshot(),
@@ -586,6 +610,8 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
   } finally {
     // Відновлюємо конфіг навіть якщо тест упав посередині.
     Object.assign(config.rag, savedRag);
+    config.ollama.chatModel = savedChatModel;
+    config.embedModelName = savedEmbedModel;
     // Прогін обірвався — не лишаємо відкритий дескриптор. Недописаний звіт
     // лишається файлом *.json.partial.
     if (report) await report.abort();

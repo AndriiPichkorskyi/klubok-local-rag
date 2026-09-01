@@ -7,6 +7,7 @@
 
 import { config } from "../../config/config.js";
 import { db } from "../../services/db.service.js";
+import { jsonrepair } from "jsonrepair";
 import { ollama } from "../../services/ollama.service.js";
 import { generatePrompt } from "./prompts.js";
 
@@ -242,7 +243,14 @@ export async function processQuery(
 
   if (config.rag.enableJsonFormat) {
     try {
-      const parsed = JSON.parse(responseText);
+      let cleanText = responseText.trim();
+      if (!cleanText) throw new Error("Модель повернула порожню відповідь.");
+      if (cleanText.startsWith("```json")) {
+        cleanText = cleanText.replace(/^```json\s*/, "").replace(/```$/, "").trim();
+      } else if (cleanText.startsWith("```")) {
+        cleanText = cleanText.replace(/^```\s*/, "").replace(/```$/, "").trim();
+      }
+      const parsed = JSON.parse(jsonrepair(cleanText));
       if (parsed.isMatch && parsed.sourceId > 0 && parsed.sourceId <= parentDocuments.length) {
         const sourceDoc = parentDocuments[parsed.sourceId - 1];
         recommendedApp = sourceDoc.appName;
@@ -257,9 +265,9 @@ export async function processQuery(
         }
       }
     } catch (e) {
-      console.error("JSON parsing error:", e.message, responseText);
-      responseText = "Помилка формату відповіді від LLM.";
-      recommendedApp = "NOT_FOUND";
+      console.error("JSON parsing error:", e.message, "\n--- СИРА ВІДПОВІДЬ LLM ---\n", responseText, "\n--------------------------");
+      responseText = `Помилка обробки відповіді LLM: ${e.message}\n\n**Сира відповідь моделі:**\n\`\`\`text\n${responseText || "<порожньо>"}\n\`\`\``;
+      recommendedApp = "ERROR";
     }
   } else {
     // 1. Спочатку перевіряємо наявність тегу [SOURCE_ID: X]

@@ -91,7 +91,7 @@ function vectorSteps(models, configModel) {
  * порожньо = бекенд бере матрицю з конфіга, як і було до появи форми осей.
  * Повертає масив {key, method, params, label, warn} у порядку виконання.
  */
-export function buildPlan(selection, models, configModel, testParams = null) {
+export function buildPlan(selection, models, configModel, testParams = null, chatModels = [], configChatModel = null) {
   const steps = selection?.steps || {};
   const tests = selection?.tests || {};
   const plan = [];
@@ -107,62 +107,52 @@ export function buildPlan(selection, models, configModel, testParams = null) {
 
   for (const step of TEST_STEPS) {
     if (!tests[step.id]) continue;
-    plan.push({
-      key: `full:${step.id}`,
-      method: step.method,
-      params: testParams && testParams.axes ? { axes: testParams.axes } : {},
-      label: step.label,
-    });
+    
+    // Якщо вибрані чат-моделі для тестів, створюємо крок для кожної
+    const chosenChat = Array.isArray(chatModels) && chatModels.length > 0 ? chatModels : [configChatModel || "default"];
+    
+    const chosenEmbed = Array.isArray(models) && models.length > 0 ? models : [configModel || "default"];
+    
+    for (const embed of chosenEmbed) {
+      for (const chat of chosenChat) {
+        const params = { ...testParams, overrideChatModel: chat, overrideEmbedModel: embed };
+        const label = `${step.label} · ${embed} · ${chat}`;
+        plan.push({ key: `full:${step.id}:${embed}:${chat}`, method: step.method, params, label });
+      }
+    }
   }
-
   return plan;
 }
 
-/** Число з результату, якщо воно там є. Інакше undefined — прочерк краще за нуль. */
-function num(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
 /**
- * Що саме зробив крок — рядками, придатними для ранкового читання.
- * Кожен метод повертає свій набір полів (див. sidecar/src/rpc/methods.js),
- * тож розбираємо їх окремо, а невідоме показуємо як є.
+ * Опис результату кроку. Повертає масив рядків.
  */
 export function describeStepResult(method, result) {
-  if (result === undefined || result === null) return ["результату немає"];
+  if (!result || typeof result !== "object") return [String(result)];
+  const num = (v) => (Number.isFinite(v) ? v : undefined);
   const lines = [];
-
-  if (typeof result === "boolean") {
-    // tests.run історично повертає true/false замість об'єкта (docs/notes/phase3.md).
-    return [result ? "усі кейси пройдено" : "є провалені кейси — дивіться звіт"];
-  }
-  if (typeof result !== "object") return [String(result)];
 
   switch (method) {
     case "pipeline.scanApps":
-      lines.push(`нових програм: ${num(result.newApps) ?? "—"}`);
+      if (num(result.newApps) !== undefined) lines.push(`нових: ${result.newApps}`);
       break;
     case "pipeline.fetchDocs":
     case "pipeline.fetchLocalDocs":
-      lines.push(`документів: ${num(result.docsCount) ?? "—"}`);
-      if (result.mbDownloaded !== undefined) lines.push(`завантажено: ${result.mbDownloaded} MB`);
+      if (num(result.docsCount) !== undefined) lines.push(`документів: ${result.docsCount}`);
+      if (result.mbDownloaded) lines.push(`${result.mbDownloaded} МБ`);
       break;
     case "pipeline.keywordAugmentation":
-      lines.push(`згенеровано намірів: ${num(result.generated) ?? "—"}`);
+      if (num(result.generated) !== undefined) lines.push(`згенеровано: ${result.generated}`);
       break;
     case "pipeline.vectorize":
-      lines.push(`чанків: ${num(result.chunks) ?? "—"}`);
-      break;
     case "pipeline.vectorizeIntents":
-      lines.push(`чанків намірів: ${num(result.chunks) ?? num(result.intents) ?? "—"}`);
+      if (num(result.chunks) !== undefined) lines.push(`чанків: ${result.chunks}`);
       break;
     case "pipeline.fullSync":
-      // fullSync сам каже, на якому внутрішньому кроці спинився.
       if (result.stoppedAt) lines.push(`спинився на кроці: ${result.stoppedAt}`);
       if (num(result.newApps) !== undefined) lines.push(`нових програм: ${result.newApps}`);
       if (num(result.docsCount) !== undefined) lines.push(`документів: ${result.docsCount}`);
       if (num(result.generated) !== undefined) lines.push(`намірів: ${result.generated}`);
-      // Найважливіше для нічного прогону: що вийшло по КОЖНІЙ моделі окремо.
       if (result.perModel && typeof result.perModel === "object") {
         for (const [model, value] of Object.entries(result.perModel)) {
           const text =
@@ -171,7 +161,7 @@ export function describeStepResult(method, result) {
               : value === "cancelled"
                 ? "зупинено — модель НЕ векторизовано"
                 : `${value} чанків`;
-          lines.push(`${model}: ${text}`);
+          lines.push(`• ${model}: ${text}`);
         }
       }
       break;
