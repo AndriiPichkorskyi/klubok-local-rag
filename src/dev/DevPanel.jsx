@@ -113,6 +113,8 @@ export default function DevPanel() {
     ops,
     run,
     cancelOp,
+    pauseOp,
+    resumeOp,
     note,
     anyRunning,
     runningCount,
@@ -241,6 +243,9 @@ export default function DevPanel() {
                 ops={ops}
                 run={run}
                 cancelOp={cancelOp}
+                pauseOp={pauseOp}
+                resumeOp={resumeOp}
+                testConcurrency={config?.rag?.testConcurrency || 1}
                 note={note}
                 embedModels={embedModels} chatModels={chatModels} configChatModel={config?.ollama?.chatModel || null}
                 configModel={config?.embedModelName || null}
@@ -259,6 +264,9 @@ export default function DevPanel() {
                 ops={ops}
                 run={run}
                 cancelOp={cancelOp}
+                pauseOp={pauseOp}
+                resumeOp={resumeOp}
+                testConcurrency={config?.rag?.testConcurrency || 1}
                 benchmark={benchmark}
                 onFinished={onTestsFinished}
               />

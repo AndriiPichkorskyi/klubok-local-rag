@@ -15,7 +15,7 @@
  * не починати наступний. Кнопки, яким підсумок не потрібен, просто його ігнорують.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { onProgress, newRef, jobCancel } from "../ipc";
+import { onProgress, newRef, jobCancel, testsPause, testsResume } from "../ipc";
 import { errorText, summarizeResult } from "./format";
 
 /**
@@ -148,6 +148,11 @@ export function useDevRuntime() {
         cancelReason: null,
         cancelling: false,
         cancelledText: null,
+        paused: false,
+        pausing: false,
+        resuming: false,
+        testConcurrency: null,
+        controlReason: null,
       });
       appendLog({ source: label, text: "старт", level: "start" });
 
@@ -156,6 +161,9 @@ export function useDevRuntime() {
         patchOp(key, {
           running: false,
           cancelling: false,
+          paused: false,
+          pausing: false,
+          resuming: false,
           finishedAt: Date.now(),
           durationMs: Date.now() - startedAt,
           pct: null,
@@ -243,6 +251,79 @@ export function useDevRuntime() {
     [appendLog, patchOp],
   );
 
+  /** Ставить тестову чергу на паузу; уже активні запити можуть завершитись. */
+  const pauseOp = useCallback(
+    async (key) => {
+      const op = opsRef.current[key];
+      if (!op?.running) return { paused: false, reason: "операція вже не виконується" };
+      if (typeof op.rpcId !== "number") {
+        const reason = "серверний id ще невідомий — не було жодної події прогресу";
+        patchOp(key, { pausing: false, controlReason: reason });
+        return { paused: false, reason };
+      }
+
+      patchOp(key, { pausing: true, controlReason: null });
+      try {
+        const result = await testsPause(op.rpcId);
+        const paused = Boolean(result?.paused);
+        patchOp(key, {
+          paused,
+          pausing: false,
+          testConcurrency: result?.concurrency ?? op.testConcurrency,
+          controlReason: paused ? null : "бекенд не підтвердив паузу",
+        });
+        appendLog({
+          source: op.label || key,
+          text: paused
+            ? `пауза прийнята · активних ${result?.active || 0}, у черзі ${result?.queued || 0}`
+            : "бекенд не підтвердив паузу",
+          level: paused ? "info" : "error",
+        });
+        return result;
+      } catch (error) {
+        const reason = errorText(error);
+        patchOp(key, { pausing: false, controlReason: reason });
+        appendLog({ source: op.label || key, text: `пауза не вдалася: ${reason}`, level: "error" });
+        return { paused: false, reason };
+      }
+    },
+    [appendLog, patchOp],
+  );
+
+  /** Продовжує тестову чергу з обраною паралельністю. */
+  const resumeOp = useCallback(
+    async (key, concurrency) => {
+      const op = opsRef.current[key];
+      if (!op?.running) return { paused: false, reason: "операція вже не виконується" };
+      if (typeof op.rpcId !== "number") {
+        return { paused: true, reason: "серверний id ще невідомий" };
+      }
+
+      patchOp(key, { resuming: true, controlReason: null });
+      try {
+        const result = await testsResume(op.rpcId, concurrency);
+        patchOp(key, {
+          paused: Boolean(result?.paused),
+          resuming: false,
+          testConcurrency: result?.concurrency ?? concurrency,
+          controlReason: null,
+        });
+        appendLog({
+          source: op.label || key,
+          text: `продовжено · паралельність ${result?.concurrency ?? concurrency}`,
+          level: "info",
+        });
+        return result;
+      } catch (error) {
+        const reason = errorText(error);
+        patchOp(key, { resuming: false, controlReason: reason });
+        appendLog({ source: op.label || key, text: `продовжити не вдалося: ${reason}`, level: "error" });
+        return { paused: true, reason };
+      }
+    },
+    [appendLog, patchOp],
+  );
+
   // Підписка на прогрес довгих операцій. Відписка — обов'язково в cleanup.
   useEffect(() => {
     let unlisten = null;
@@ -307,6 +388,8 @@ export function useDevRuntime() {
     ops,
     run,
     cancelOp,
+    pauseOp,
+    resumeOp,
     note,
     anyRunning,
     runningCount,
@@ -331,6 +414,11 @@ export function opState(ops, key) {
       cancelReason: null,
       cancelling: false,
       cancelledText: null,
+      paused: false,
+      pausing: false,
+      resuming: false,
+      testConcurrency: null,
+      controlReason: null,
     }
   );
 }

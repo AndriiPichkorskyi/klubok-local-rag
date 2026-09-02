@@ -30,8 +30,18 @@ function verdict(result) {
   return null;
 }
 
-export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished, chatModels, configChatModel }) {
+export default function TestsSection({
+  ops,
+  run,
+  cancelOp,
+  pauseOp,
+  resumeOp,
+  testConcurrency = 1,
+  benchmark,
+  onFinished,
+}) {
   const [metrics, setMetrics] = useState(null);
+  const [concurrency, setConcurrency] = useState(() => Math.max(1, Number(testConcurrency) || 1));
 
   useEffect(() => {
     let unlisten;
@@ -50,11 +60,24 @@ export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished
 
   const rag = opState(ops, "tests.run");
   const external = opState(ops, "tests.runExternal");
+  const activeTests = [rag, external].filter((op) => op.running);
+  const concurrencyLocked = activeTests.some((op) => !op.paused);
+  const selectedConcurrency = Math.max(1, Math.trunc(Number(concurrency) || 1));
+
+  useEffect(() => {
+    if (!rag.running && !external.running) {
+      setConcurrency(Math.max(1, Number(testConcurrency) || 1));
+    }
+  }, [rag.running, external.running, testConcurrency]);
 
   const axes = benchmark?.axesParam || null;
   const start = (method, label) =>
     run(method, label, async (ref) => {
-      const result = await rpc(method, axes ? { axes } : {}, ref);
+      const result = await rpc(
+        method,
+        { ...(axes ? { axes } : {}), concurrency: selectedConcurrency },
+        ref,
+      );
       onFinished?.();
       return result;
     });
@@ -70,12 +93,33 @@ export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished
       title="Тестування" 
       hint={metrics ? `Ollama RAM: ${metrics.ram_mb.toFixed(0)} MB | Energy Score: ${metrics.power_score.toFixed(1)}` : "Очікування метрик..."}
     >
+      <div className="dp-test-controls">
+        <label className="row dp-test-concurrency">
+          <span>Кількість потоків</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={concurrency}
+            disabled={concurrencyLocked}
+            onChange={(event) => setConcurrency(Math.max(1, Math.trunc(Number(event.target.value) || 1)))}
+          />
+        </label>
+        <span className="muted dp-small">
+          Під час прогону змінюється після паузи; нове значення застосує «Продовжити».
+        </span>
+      </div>
+
       <div className="dp-grid">
         <OpButton
           op={rag}
           label="RAG-бенчмарк (tests.run)"
           onClick={() => start("tests.run", "RAG-бенчмарк")}
           onCancel={() => cancelOp?.("tests.run")}
+          onPause={() => pauseOp?.("tests.run")}
+          onResume={(concurrency) => resumeOp?.("tests.run", concurrency)}
+          defaultConcurrency={selectedConcurrency}
+          stopLabel="Завершити"
           disabled={Boolean(benchmark?.blockedFor?.("rag") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(rag)}
@@ -86,6 +130,10 @@ export default function TestsSection({ ops, run, cancelOp, benchmark, onFinished
           label="EXTERNAL-тести (tests.runExternal)"
           onClick={() => start("tests.runExternal", "EXTERNAL-тести")}
           onCancel={() => cancelOp?.("tests.runExternal")}
+          onPause={() => pauseOp?.("tests.runExternal")}
+          onResume={(concurrency) => resumeOp?.("tests.runExternal", concurrency)}
+          defaultConcurrency={selectedConcurrency}
+          stopLabel="Завершити"
           disabled={Boolean(benchmark?.blockedFor?.("external") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(external)}

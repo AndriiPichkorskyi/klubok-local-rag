@@ -28,10 +28,10 @@
  * Поля `timestamp`, `totalCases`, `models` і `modes.*.summary` лишились на
  * місці, тож cli/reports.js і src/dev/ReportTable.jsx читають звіт як читали.
  *
- * Поки прогін триває, файл має суфікс `.partial` і перейменовується на
- * `.json` лише при штатному завершенні. Тому обірваний прогін не підсовує
- * інтерфейсу зламаний JSON, але й не зникає безслідно — недописаний звіт
- * лишається на диску як свідчення того, докуди дійшли.
+ * Поки прогін триває, `.partial` завжди містить валідний JSON-знімок. Відкриті
+ * масиви пишуться у внутрішній `.working`, а після кожного пакета з 50
+ * результатів знімок атомарно замінюється. Тому файл можна читати навіть під
+ * час прогону або після скасування тестів.
  */
 
 import fs from "fs/promises";
@@ -43,9 +43,14 @@ import { createWriteStream } from "fs";
  */
 export function createReportStream(filePath, header) {
   const partialPath = `${filePath}.partial`;
-  const stream = createWriteStream(partialPath, { encoding: "utf8" });
+  // Внутрішні файли навмисно не мають розширення `.json`: вони можуть бути
+  // синтаксично незавершеними, і людина не має сплутати їх зі звітом.
+  const reportStem = filePath.endsWith(".json") ? filePath.slice(0, -5) : filePath;
+  const workingPath = `${reportStem}.working`;
+  const snapshotPath = `${reportStem}.snapshot-next`;
+  const stream = createWriteStream(workingPath, { encoding: "utf8" });
 
-  // Результати приходять з кількох паралельних задач (p-limit), тому запис
+  // Результати приходять з кількох паралельних задач керованої черги, тому запис
   // серіалізуємо через ланцюжок промісів: два write не можуть переплестись.
   let chain = Promise.resolve();
   let firstMode = true;
@@ -68,37 +73,62 @@ export function createReportStream(filePath, header) {
   function writeChunk(text) {
     return new Promise((resolve, reject) => {
       if (streamError) return reject(streamError);
-      if (stream.write(text)) resolve();
-      else stream.once("drain", resolve);
+      stream.write(text, "utf8", (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
   }
 
-  
   let chunkBuffer = [];
-  const BATCH_SIZE = 10;
+  let bufferedResults = 0;
+  // Менше системних записів під час багатогодинного прогону: результати
+  // накопичуються максимум по 50 JSON-фрагментів і тоді одним блоком ідуть на диск.
+  const BATCH_SIZE = 50;
 
-  function flushBuffer() {
-    if (chunkBuffer.length === 0) return Promise.resolve();
-    const text = chunkBuffer.join("");
-    chunkBuffer = [];
-    return writeChunk(text);
+  /** Закриття, яке перетворює поточний стан робочого файла на валідний JSON. */
+  function snapshotTail() {
+    if (!currentMode) return firstMode ? "}\n}\n" : "\n  }\n}\n";
+    const resultTail = firstResult ? "" : "\n      ";
+    return `${resultTail}],\n      "summary": null,\n      "inProgress": true\n    }\n  }\n}\n`;
   }
 
-  function enqueue(text, forceFlush = false) {
+  /** Публікує знімок через rename: читач не побачить напівзаписаний файл. */
+  async function publishSnapshot(tail) {
+    await fs.copyFile(workingPath, snapshotPath);
+    await fs.appendFile(snapshotPath, tail, "utf8");
+    await fs.rename(snapshotPath, partialPath);
+  }
+
+  function scheduleFlush() {
+    if (chunkBuffer.length === 0) return chain;
+    // Відрізаємо пакет синхронно: наступні результати вже належать наступним 50.
+    const text = chunkBuffer.join("");
+    const tail = snapshotTail();
+    chunkBuffer = [];
+    bufferedResults = 0;
+    chain = chain
+      .then(() => writeChunk(text))
+      .then(() => publishSnapshot(tail));
+    return chain;
+  }
+
+  function enqueue(text, forceFlush = false, isResult = false) {
     chunkBuffer.push(text);
-    if (chunkBuffer.length >= BATCH_SIZE || forceFlush) {
-      chain = chain.then(() => flushBuffer());
+    if (isResult) bufferedResults += 1;
+    if (bufferedResults >= BATCH_SIZE || forceFlush) {
+      scheduleFlush();
     }
     return chain;
   }
-  
 
   // Заголовок пишеться в тому порядку, в якому його передали: так порядок
   // ключів у файлі однаковий для будь-якого набору полів.
   const headerLines = Object.entries(headerCopy).map(
     ([key, value]) => `  ${JSON.stringify(key)}: ${JSON.stringify(value)},\n`,
   );
-  enqueue("{\n" + headerLines.join("") + `  "modes": {`);
+  // Перший валідний `.partial` з'являється відразу, ще до першого результату.
+  enqueue("{\n" + headerLines.join("") + `  "modes": {`, true);
 
   return {
     filePath,
@@ -115,14 +145,17 @@ export function createReportStream(filePath, header) {
       firstResult = true;
       currentMode = { name, params };
       const paramsLine = params ? `\n      "params": ${JSON.stringify(params)},` : "";
-      return enqueue(`${prefix}    ${JSON.stringify(name)}: {${paramsLine}\n      "results": [`);
+      return enqueue(
+        `${prefix}    ${JSON.stringify(name)}: {${paramsLine}\n      "results": [`,
+        true,
+      );
     },
 
     /** Дописує один результат і НЕ тримає його в пам'яті. */
     addResult(result) {
       const prefix = firstResult ? "\n" : ",\n";
       firstResult = false;
-      return enqueue(`${prefix}        ${JSON.stringify(result)}`);
+      return enqueue(`${prefix}        ${JSON.stringify(result)}`, false, true);
     },
 
     /** Закриває секцію режиму підсумком. */
@@ -132,7 +165,7 @@ export function createReportStream(filePath, header) {
         currentMode = null;
       }
       const tail = firstResult ? "" : "\n      ";
-      return enqueue(`${tail}],\n      "summary": ${JSON.stringify(summary)}\n    }`);
+      return enqueue(`${tail}],\n      "summary": ${JSON.stringify(summary)}\n    }`, true);
     },
 
     /**
@@ -149,24 +182,40 @@ export function createReportStream(filePath, header) {
      * @param {Object} footer - додаткові поля ПІСЛЯ `modes` (seedGroups тощо).
      */
     async close(footer = {}) {
-      await enqueue("", true); // force flush
       if (closed) return filePath;
+      if (currentMode) {
+        throw new Error("Не можна завершити JSON-звіт, доки поточний режим не закрито.");
+      }
+      scheduleFlush();
+      await chain;
       closed = true;
       const footerLines = Object.entries(footer).map(
         ([key, value]) => `,\n  ${JSON.stringify(key)}: ${JSON.stringify(value)}`,
       );
-      await enqueue((firstMode ? "}" : "\n  }") + footerLines.join("") + "\n}\n", true);
+      await writeChunk((firstMode ? "}" : "\n  }") + footerLines.join("") + "\n}\n");
       await new Promise((resolve) => stream.end(resolve));
       if (streamError) throw streamError;
-      await fs.rename(partialPath, filePath);
+      await fs.rename(workingPath, filePath);
+      await fs.unlink(partialPath).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
       return filePath;
     },
 
-    /** Аварійне закриття: файл лишається як `.partial`. */
+    /** Аварійне закриття: валідний останній знімок лишається як `.partial`. */
     async abort() {
       if (closed) return partialPath;
+      scheduleFlush();
+      await chain;
       closed = true;
       await new Promise((resolve) => stream.end(resolve));
+      if (streamError) throw streamError;
+      await fs.unlink(workingPath).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
+      await fs.unlink(snapshotPath).catch((error) => {
+        if (error.code !== "ENOENT") throw error;
+      });
       return partialPath;
     },
   };

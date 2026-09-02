@@ -19,6 +19,21 @@ function num(value) {
   return Number.isFinite(value) ? value : null;
 }
 
+function languageScore(bucket) {
+  if (!bucket || !Number.isFinite(bucket.passRate) || !Number.isFinite(bucket.cases)) return "—";
+  return `${bucket.passRate}% (${bucket.passed}/${bucket.cases})`;
+}
+
+function gapText(gap) {
+  if (!Number.isFinite(gap)) return "—";
+  return `${gap > 0 ? "+" : ""}${gap} п.п.`;
+}
+
+function gapClass(gap) {
+  if (!Number.isFinite(gap) || gap === 0) return "muted";
+  return gap > 0 ? "dp-ok" : "dp-err";
+}
+
 export default function ReportTable({ data }) {
   if (!data || typeof data !== "object" || !data.modes) {
     return <div className="dp-alert">Це не схоже на звіт: у JSON немає поля «modes».</div>;
@@ -54,6 +69,21 @@ export default function ReportTable({ data }) {
       mem: Number.isFinite(summary.avgMem) ? `${Math.round(summary.avgMem)} MB` : "—",
     };
   });
+
+  const languageRows = modeNames
+    .map((mode) => {
+      const byLanguage = data.modes[mode]?.summary?.byLanguage;
+      const uk = byLanguage?.uk;
+      const en = byLanguage?.en;
+      if (!uk?.cases || !en?.cases) return null;
+      return { mode, uk, en, gap: uk.passRate - en.passRate };
+    })
+    .filter(Boolean);
+  const languageTotals = data.languageBreakdown?.totals;
+  const totalGap =
+    Number.isFinite(languageTotals?.uk?.passRate) && Number.isFinite(languageTotals?.en?.passRate)
+      ? languageTotals.uk.passRate - languageTotals.en.passRate
+      : null;
 
   return (
     <div>
@@ -97,6 +127,51 @@ export default function ReportTable({ data }) {
           </tbody>
         </table>
       </div>
+
+      {languageRows.length > 0 ? (
+        <div style={{ marginTop: 14 }}>
+          <div className="dp-small" style={{ marginBottom: 6 }}>
+            <strong>Порівняння однакових задач за мовою</strong>
+            <div className="muted">
+              Різниця = українська − англійська; нейтральні запити не враховуються.
+            </div>
+          </div>
+          <div className="dp-scroll-x">
+            <table className="dp-table">
+              <thead>
+                <tr>
+                  <th>Режим</th>
+                  <th>Українська</th>
+                  <th>Англійська</th>
+                  <th>Різниця</th>
+                </tr>
+              </thead>
+              <tbody>
+                {languageRows.map((row) => (
+                  <tr key={row.mode}>
+                    <td>{row.mode}</td>
+                    <td className={passRateClass(row.uk.passRate)}>{languageScore(row.uk)}</td>
+                    <td className={passRateClass(row.en.passRate)}>{languageScore(row.en)}</td>
+                    <td className={gapClass(row.gap)}>{gapText(row.gap)}</td>
+                  </tr>
+                ))}
+                {languageTotals?.uk?.cases && languageTotals?.en?.cases ? (
+                  <tr>
+                    <td><strong>Усі режими</strong></td>
+                    <td className={passRateClass(languageTotals.uk.passRate)}>
+                      {languageScore(languageTotals.uk)}
+                    </td>
+                    <td className={passRateClass(languageTotals.en.passRate)}>
+                      {languageScore(languageTotals.en)}
+                    </td>
+                    <td className={gapClass(totalGap)}>{gapText(totalGap)}</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="dp-small" style={{ marginTop: 6 }}>
         <div>Загальний час усіх тестів: {(grandTotalTime / 1000).toFixed(1)} сек</div>

@@ -4,10 +4,9 @@
  *       до LLM і скільки це приблизно триватиме.
  *
  * Навіщо. Осі тепер задаються в панелі розробника, а бенчмарк запускають на
- * ніч. Побачити «6 режимів × 153 кейси = 918 прогонів ≈ 1 год 43 хв» треба
+ * ніч. Побачити «6 режимів × 68 кейсів = 408 прогонів» треба
  * ДО запуску, а не за фактом. Рахувати це в React власною формулою не можна:
- * два незалежні підрахунки неминуче розійдуться (кількість зовнішніх кейсів
- * узагалі залежить від того, які програми є в базі). Тому і панель, і сам
+ * два незалежні підрахунки неминуче розійдуться. Тому і панель, і сам
  * прогін питають одне й те саме місце — `resolveBenchmarkPlan`.
  *
  * Оцінка часу береться з ОСТАННЬОГО звіту того самого виду, а не зі стелі:
@@ -19,7 +18,6 @@
 import fs from "fs/promises";
 import path from "path";
 import { config } from "../config/config.js";
-import { db } from "../services/db.service.js";
 import { TEST_CASES } from "./test-cases.js";
 import { loadExternalCases } from "./test-external.js";
 import { resolveBenchmarkPlan } from "./benchmark-matrix.js";
@@ -34,7 +32,7 @@ export const BENCHMARK_KINDS = ["rag", "external"];
  */
 const DEFAULT_MS_PER_RUN = { rag: 2900, external: 6700 };
 
-/** Кеш кількості зовнішніх кейсів: датасети й таблиця apps за сесію не міняються. */
+/** Кеш кількості зовнішніх кейсів: файл кейсів за сесію не міняється. */
 let externalCaseCount = null;
 
 /** Кеш оцінки темпу: вид → {file, mtimeMs, msPerRun, source}. */
@@ -53,15 +51,13 @@ function matchesKind(name, kind) {
 }
 
 /**
- * Скільки кейсів у наборі. Для зовнішніх тестів це НЕ сума довжин датасетів:
- * intents-кейс без відповідної програми в базі відкидається (див.
- * loadExternalCases), тож рахуємо тим самим кодом, яким і прогонятимемо.
+ * Скільки кейсів у наборі. Для зовнішніх тестів рахуємо тим самим експортом,
+ * яким і прогонятимемо, щоб план не розходився з фактичним запуском.
  * @param {"rag"|"external"} kind
  */
 export async function caseCountFor(kind) {
   if (kind !== "external") return TEST_CASES.length;
   if (externalCaseCount !== null) return externalCaseCount;
-  await db.init();
   const cases = await loadExternalCases();
   externalCaseCount = cases.length;
   return externalCaseCount;

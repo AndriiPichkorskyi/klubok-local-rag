@@ -637,6 +637,15 @@ class DbService {
   /**
    * Отримує повний текст веб-документа за його ID (для Parent Document Retrieval)
    */
+  async getRawHtmlByDocId(docId) {
+    if (docId === 0 || docId === -1) return null;
+    const row = await this.sqliteDb.get(
+      'SELECT r.html FROM raw_html r JOIN web_documents w ON r.link_id = w.link_id WHERE w.id = ?',
+      [docId]
+    );
+    return row ? row.html : null;
+  }
+
   async getWebDocumentById(docId) {
     if (docId === 0) return null; // Це метадані, немає повного документа
     return await this.sqliteDb.get(`SELECT content FROM web_documents WHERE id = ?`, [docId]);
@@ -815,64 +824,153 @@ class DbService {
     return [...new Set(listed.filter((name) => typeof name === "string" && name.trim()))];
   }
 
+  /** Відновлює назву Ollama-моделі з імені теки, де `:` було замінено на `_`. */
+  modelFromLancedbDir(dirName) {
+    const encoded = dirName.slice("lancedb_data_".length);
+    const separator = encoded.lastIndexOf("_");
+    if (separator < 1 || separator === encoded.length - 1) return encoded;
+    return `${encoded.slice(0, separator)}:${encoded.slice(separator + 1)}`;
+  }
+
   /**
-   * Готовність кожної моделі окремо: скільки програм позначені векторизованими
-   * саме для неї, чи існує її тека LanceDB і скільки та важить.
+   * Моделі з конфіга плюс реальні теки LanceDB. Це дозволяє побачити базу,
+   * створену старим конфігом або окремим експериментом.
+   */
+  async modelCandidates() {
+    const candidates = new Map(
+      this.modelsFromConfig().map((model) => [
+        model,
+        { model, dir: lancedbPathFor(model), discoveredOnDisk: false },
+      ]),
+    );
+
+    let entries = [];
+    try {
+      entries = await fs.readdir(config.paths.sidecarDir, { withFileTypes: true });
+    } catch {
+      return [...candidates.values()];
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith("lancedb_data_")) continue;
+      const exact = [...candidates.values()].find(
+        (candidate) => path.basename(candidate.dir) === entry.name,
+      );
+      const model = exact?.model || this.modelFromLancedbDir(entry.name);
+      candidates.set(model, {
+        model,
+        dir: path.join(config.paths.sidecarDir, entry.name),
+        discoveredOnDisk: true,
+      });
+    }
+
+    return [...candidates.values()];
+  }
+
+  /** Фактичний вміст однієї LanceDB без завантаження векторів у пам'ять. */
+  async lanceDbSummary(dir) {
+    const size = await this.dirSize(dir);
+    if (!size) {
+      return {
+        path: dir,
+        exists: false,
+        tableExists: false,
+        sizeBytes: 0,
+        sizeMb: formatBytes(0),
+        files: 0,
+        chunks: 0,
+        apps: null,
+        sourceTypes: {},
+      };
+    }
+
+    const result = {
+      path: dir,
+      exists: true,
+      tableExists: false,
+      sizeBytes: size.bytes,
+      sizeMb: formatBytes(size.bytes),
+      files: size.files,
+      chunks: 0,
+      apps: null,
+      sourceTypes: {},
+    };
+
+    try {
+      const lance = await lancedb.connect(dir);
+      const tableNames = await lance.tableNames();
+      if (!tableNames.includes(this.tableName)) return result;
+
+      const table = await lance.openTable(this.tableName);
+      result.tableExists = true;
+      result.chunks = await table.countRows();
+
+      // `select` не читає важкий vector; для 15k чанків лишаються два короткі поля.
+      let rows;
+      try {
+        rows = await table.query().select(["appName", "sourceType"]).toArray();
+      } catch {
+        rows = await table.query().select(["appName"]).toArray();
+      }
+      const appNames = new Set();
+      for (const row of rows) {
+        if (typeof row.appName === "string" && row.appName.trim()) appNames.add(row.appName);
+        const sourceType = row.sourceType || "WEB";
+        result.sourceTypes[sourceType] = (result.sourceTypes[sourceType] || 0) + 1;
+      }
+      result.apps = appNames.size;
+    } catch (error) {
+      result.error = error.message;
+    }
+
+    return result;
+  }
+
+  /**
+   * Готовність кожної моделі окремо: фактичні програми й чанки у LanceDB,
+   * наявність таблиці та розмір теки. SQLite-прапорець лишається діагностикою.
    */
   async getModelReadiness(appsCount) {
     const schemaColumns = await this.vectorizedColumns();
-    const usedColumns = new Set();
     const models = [];
 
-    for (const model of this.modelsFromConfig()) {
+    for (const candidate of await this.modelCandidates()) {
+      const { model, dir, discoveredOnDisk } = candidate;
       const column = vectorizedColumnFor(model);
       const isCurrent = model === config.embedModelName;
-      // Модель без колонки в схемі (напр. чат-модель) до статистики не входить.
-      if (!schemaColumns.includes(column) && !isCurrent) continue;
-      usedColumns.add(column);
+      // Чат-модель без колонки й без LanceDB до статистики не входить.
+      if (!schemaColumns.includes(column) && !isCurrent && !discoveredOnDisk) continue;
 
-      let vectorizedApps = null;
+      let sqliteVectorizedApps = null;
       if (schemaColumns.includes(column)) {
         const row = await this.sqliteDb.get(
           `SELECT COUNT(*) as count FROM apps WHERE ${column} = 1`,
         );
-        vectorizedApps = row.count;
+        sqliteVectorizedApps = row.count;
       }
 
-      const dir = lancedbPathFor(model);
-      const size = await this.dirSize(dir);
+      const lanceSummary = await this.lanceDbSummary(dir);
+      // Фактичні унікальні appName у LanceDB точніші за старі SQLite-прапорці.
+      const vectorizedApps = lanceSummary.apps ?? sqliteVectorizedApps;
+      const ready =
+        lanceSummary.tableExists &&
+        vectorizedApps !== null &&
+        appsCount > 0 &&
+        vectorizedApps === appsCount;
 
       models.push({
         model,
         column,
         columnExists: schemaColumns.includes(column),
         isCurrent,
+        discoveredOnDisk,
         vectorizedApps,
+        sqliteVectorizedApps,
+        vectorizedSource: lanceSummary.apps === null ? "sqlite" : "lancedb",
         notVectorizedApps: vectorizedApps === null ? null : appsCount - vectorizedApps,
-        ready: vectorizedApps !== null && appsCount > 0 && vectorizedApps === appsCount,
-        lancedb: {
-          path: dir,
-          exists: size !== null,
-          sizeBytes: size ? size.bytes : 0,
-          sizeMb: formatBytes(size ? size.bytes : 0),
-          files: size ? size.files : 0,
-        },
-      });
-    }
-
-    // Колонки, для яких у конфізі немає моделі: показуємо чесно, з model: null.
-    for (const column of schemaColumns) {
-      if (usedColumns.has(column)) continue;
-      const row = await this.sqliteDb.get(`SELECT COUNT(*) as count FROM apps WHERE ${column} = 1`);
-      models.push({
-        model: null,
-        column,
-        columnExists: true,
-        isCurrent: false,
-        vectorizedApps: row.count,
-        notVectorizedApps: appsCount - row.count,
-        ready: appsCount > 0 && row.count === appsCount,
-        lancedb: null,
+        chunks: lanceSummary.chunks,
+        ready,
+        lancedb: lanceSummary,
       });
     }
 

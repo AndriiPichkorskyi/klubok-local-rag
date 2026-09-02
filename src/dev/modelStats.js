@@ -70,6 +70,10 @@ function readEntry(name, entry, fallbackTotal) {
   const tableExists = toBoolean(pick(object, TABLE_KEYS)) ?? toBoolean(pick(nested, TABLE_KEYS));
   const tableSize = nested ? nested.sizeMb : undefined;
   const tablePath = nested ? nested.path : undefined;
+  const sourceTypes =
+    nested && nested.sourceTypes && typeof nested.sourceTypes === "object"
+      ? nested.sourceTypes
+      : undefined;
 
   // Готовність, порахована самим бекендом. Є — довіряємо, немає — рахуємо самі.
   const explicitReady = object && typeof object.ready === "boolean" ? object.ready : undefined;
@@ -81,6 +85,7 @@ function readEntry(name, entry, fallbackTotal) {
     tableExists,
     tableSize,
     tablePath,
+    sourceTypes,
     chunks,
     explicitReady,
     isCurrent: object && typeof object.isCurrent === "boolean" ? object.isCurrent : undefined,
@@ -142,11 +147,9 @@ export function readModelStats(stats) {
     ? container
         .map((entry) => {
           const name = pick(entry, NAME_KEYS);
-          // model:null — колонка vectorized_*, для якої в конфізі немає моделі.
-          // Ховати такий рядок не можна: саме він і означає «щось не так».
-          const column = entry && typeof entry === "object" ? entry.column : undefined;
-          if (!name && !column) return null;
-          return readEntry(name ? String(name) : `колонка ${column}`, entry, appsCount);
+          // Технічна колонка SQLite без назви моделі не є окремою векторною базою.
+          if (!name) return null;
+          return readEntry(String(name), entry, appsCount);
         })
         .filter(Boolean)
     : Object.entries(container).map(([name, entry]) => readEntry(name, entry, appsCount));

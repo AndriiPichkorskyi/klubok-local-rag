@@ -10,6 +10,7 @@
     "rpc:dev": "node --watch src/rpc/server.js",
     "rpc:debug": "node --watch --inspect src/rpc/server.js",
     "test:rag": "node src/tests/test-rag.js",
+    "test:external": "node src/tests/test-external.js",
     "test:rag:all": "node src/tests/run-all-tests.js",
     "format": "prettier --write . --ignore-unknown"
   },

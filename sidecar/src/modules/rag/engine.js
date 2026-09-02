@@ -7,6 +7,7 @@
 
 import { config } from "../../config/config.js";
 import { db } from "../../services/db.service.js";
+import { scraper } from "../../services/scraper.service.js";
 import { jsonrepair } from "jsonrepair";
 import { ollama } from "../../services/ollama.service.js";
 import { generatePrompt } from "./prompts.js";
@@ -152,6 +153,7 @@ export async function processQuery(
       
       let docTitle = chunk.docTitle || "Довідка";
       let docContent = null;
+      let htmlContent = null;
 
       if (chunk.docId === -1 && config.rag.includeAppIntents) {
         docTitle = "Базовий опис та ключові слова";
@@ -161,6 +163,11 @@ export async function processQuery(
         if (fullDoc && fullDoc.content) {
           docContent = fullDoc.content;
         }
+        
+        const rawHtml = await db.getRawHtmlByDocId(chunk.docId);
+        if (rawHtml) {
+          htmlContent = scraper.extractMainHtml(rawHtml);
+        }
       }
 
       if (docContent) {
@@ -168,12 +175,14 @@ export async function processQuery(
           appName: chunk.appName,
           title: docTitle,
           content: docContent,
+          htmlContent: htmlContent || null,
           originalChunkText: chunk.text,
         });
       }
       
       // Обмежуємо до топ-3 повних статей (щоб не переповнити LLM контекст)
-      if (parentDocuments.length >= 3) break;
+      const maxDocs = config.rag?.maxContextDocuments || 3;
+      if (parentDocuments.length >= maxDocs) break;
     }
   }
 

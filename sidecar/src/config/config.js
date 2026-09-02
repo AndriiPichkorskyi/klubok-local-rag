@@ -57,6 +57,10 @@ export function buildConfig() {
       ...file.rpc,
       port: Number(process.env.RPC_PORT || file.rpc.port),
     },
+    logging: {
+      enabled: file.logging?.enabled !== false,
+      ...file.logging,
+    },
     scraper: file.scraper,
     indexer: file.indexer,
     rag: file.rag,

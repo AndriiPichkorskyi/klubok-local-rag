@@ -105,6 +105,7 @@ class LoggerService {
    * Ідемпотентний: повторний виклик нічого не переробляє.
    */
   async init() {
+    if (!this.fileLoggingEnabled()) return null;
     await fs.mkdir(this.logsDir, { recursive: true });
     if (this.pino) return this.pino;
 
@@ -130,7 +131,13 @@ class LoggerService {
 
   /** Шлях до активного файла журналу (для банера і діагностики). */
   get currentLogPath() {
+    if (!this.fileLoggingEnabled()) return "вимкнено (config.logging.enabled=false)";
     return this.destination?.file || this.diagLogFile;
+  }
+
+  /** Чи дозволені саме файли sidecar/logs. Walkthrough-журнал має окремий тумблер. */
+  fileLoggingEnabled() {
+    return config.logging?.enabled !== false;
   }
 
   // ────────────────────────── діагностичний журнал ──────────────────────────
@@ -146,6 +153,7 @@ class LoggerService {
    * @param {string} [message] - людський текст українською
    */
   event(level, event, fields = {}, message = "") {
+    if (!this.fileLoggingEnabled()) return;
     if (!this.pino) {
       // До init() (або якщо він упав) не втрачаємо подію зовсім.
       console.error(`[log:${level}] ${event} ${message}`);
@@ -157,8 +165,15 @@ class LoggerService {
   /** Скидає буфери на диск. При sync:true — запобіжник, не більше. */
   flush() {
     try {
-      if (this.queryLogBuffer && this.queryLogBuffer.length > 0 && this.queryLogFile) {
+      if (
+        this.fileLoggingEnabled() &&
+        this.queryLogBuffer &&
+        this.queryLogBuffer.length > 0 &&
+        this.queryLogFile
+      ) {
         require("fs").appendFileSync(this.queryLogFile, this.queryLogBuffer.join(""), "utf8");
+        this.queryLogBuffer = [];
+      } else if (!this.fileLoggingEnabled()) {
         this.queryLogBuffer = [];
       }
       if (this.walkthroughJournalBuffer) {
@@ -615,6 +630,7 @@ class LoggerService {
    * Формат файла queries.log лишився незмінним — його читає історія запитів.
    */
   async logQueryWithFeedback(query, contextApps, recommendedApp, response, rawLlmOutput, retrievalStats, feedback) {
+    if (!this.fileLoggingEnabled()) return false;
     try {
       const logEntry = JSON.stringify({
         timestamp: new Date().toISOString(),
@@ -627,6 +643,8 @@ class LoggerService {
         this.queryLogBuffer = [];
       }
 
+      return true;
+
     } catch (err) {
       console.error("Помилка запису логу:", err.message);
       this.event(
@@ -635,6 +653,7 @@ class LoggerService {
         { error: err.message },
         "Не вдалося дописати queries.log",
       );
+      return false;
     }
   }
 

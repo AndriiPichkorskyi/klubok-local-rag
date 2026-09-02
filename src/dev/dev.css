@@ -304,6 +304,11 @@ table.dp-table td.dp-num { text-align: right; font-family: var(--mono); }
 .dp-stop-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dp-stop-row button { width: auto; padding: 2px 8px; }
 
+/* Керування тестами: паралельність можна змінити до старту або на паузі. */
+.dp-test-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.dp-test-concurrency { gap: 8px; font-size: 12px; }
+.dp-test-concurrency input { width: 72px; }
+
 /* Підсумок прогону — те, що людина читає зранку. */
 .dp-summary {
   border: 1px solid var(--line);

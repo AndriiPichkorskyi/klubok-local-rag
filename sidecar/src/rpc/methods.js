@@ -29,8 +29,10 @@ import {
 import * as walkthrough from "../modules/walkthrough/index.js";
 import { runRagTests } from "../tests/test-rag.js";
 import { runExternalTests } from "../tests/test-external.js";
+import { createTestRunControl } from "../tests/test-queue.js";
 import { planBenchmark } from "../tests/benchmark-plan.js";
 import { ollama } from "../services/ollama.service.js";
+import { logger } from "../services/logger.service.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** Корінь sidecar/src — звідти дістаємо допоміжні скрипти */
@@ -50,6 +52,28 @@ export const jobs = new Map();
  */
 function wasCancelled(ctx) {
   return Boolean(ctx && ctx.signal && ctx.signal.aborted);
+}
+
+/** Знаходить активний тестовий прогін для tests.pause/tests.resume. */
+function activeTestJob(targetId) {
+  if (!Number.isInteger(targetId)) {
+    throw new Error("Параметр `id` для керування тестами мусить бути цілим числом.");
+  }
+  const job = jobs.get(targetId);
+  if (!job) throw new Error(`Тестової задачі з id=${targetId} немає серед активних.`);
+  if (!job.testControl || !["tests.run", "tests.runExternal"].includes(job.method)) {
+    throw new Error(`Задача id=${targetId} (${job.method}) не є тестовим прогоном.`);
+  }
+  return job;
+}
+
+/** Разова паралельність із UI; без параметра лишається значення конфіга. */
+function requestedTestConcurrency(value) {
+  if (value === undefined) return config.rag.testConcurrency;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("Параметр `concurrency` мусить бути додатним цілим числом.");
+  }
+  return value;
 }
 
 /**
@@ -262,8 +286,12 @@ export const methods = {
   },
 
   /** Перечитати pipeline.config.json з диска без перезапуску процесу. */
-  "config.reload"() {
-    return reloadConfig();
+  async "config.reload"() {
+    const next = reloadConfig();
+    // Якщо logging.enabled перемкнули з false на true, потік треба відкрити
+    // без перезапуску sidecar. При вимкненні event() одразу стає no-op.
+    await logger.init();
+    return next;
   },
 
   async "ollama.getModels"() {
@@ -381,22 +409,51 @@ export const methods = {
    *
    * `params.axes` — осі, задані в панелі розробника. Конфіг лишається джерелом
    * за замовчуванням: незадана вісь береться з `rag.benchmark.axes`.
-   */
+  */
   async "tests.run"(params = {}, ctx) {
+    const control = createTestRunControl(requestedTestConcurrency(params.concurrency));
+    ctx.job.testControl = control;
     ctx.onProgress("Запуск RAG-бенчмарку...", 0);
     return await runRagTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
       axes: params.axes ?? null,
       signal: ctx.signal,
+      control,
     });
   },
 
-  /** EXTERNAL-тести (intents, OOD, ambiguous). Матриця та сама, що й у tests.run. */
+  /** Англомовні EXTERNAL-тести. Матриця та сама, що й у tests.run. */
   async "tests.runExternal"(params = {}, ctx) {
+    const control = createTestRunControl(requestedTestConcurrency(params.concurrency));
+    ctx.job.testControl = control;
     ctx.onProgress("Запуск EXTERNAL-тестів...", 0);
     return await runExternalTests((msg, pct) => ctx.onProgress(msg, pct ?? null), {
       axes: params.axes ?? null,
       signal: ctx.signal,
+      control,
     });
+  },
+
+  /** Пауза: активні запити завершуються, нові кейси більше не стартують. */
+  "tests.pause"(params = {}) {
+    const job = activeTestJob(params.id);
+    const state = job.testControl.pause();
+    return { id: job.id, method: job.method, ...state };
+  },
+
+  /**
+   * Продовження тестів. `concurrency` можна змінити під час паузи — зокрема
+   * поставити 1, щоб звільнити ресурси ноутбука без втрати вже готових кейсів.
+   */
+  "tests.resume"(params = {}) {
+    const job = activeTestJob(params.id);
+    if (
+      params.concurrency !== undefined &&
+      (!Number.isInteger(params.concurrency) || params.concurrency < 1)
+    ) {
+      throw new Error("Параметр `concurrency` мусить бути додатним цілим числом.");
+    }
+    const state = job.testControl.resume(params.concurrency);
+    return { id: job.id, method: job.method, ...state };
   },
 
   /**

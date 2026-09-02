@@ -285,6 +285,7 @@ async function main() {
       method: job.method,
       runningMs: Date.now() - job.startedAt,
       cancelled: job.cancelled,
+      testState: job.testControl?.snapshot?.(),
     })),
   );
   logger.startMemoryWatch();

@@ -177,6 +177,38 @@ class ScraperService {
   /**
    * Очищає HTML-код: видаляє непотрібні теги, замінює іконки на текст, додає пробіли.
    */
+  extractMainHtml(data) {
+    try {
+      const $ = cheerio.load(data);
+      let mainContent = $("article");
+      if (mainContent.length === 0) mainContent = $("#sections");
+      if (mainContent.length === 0) mainContent = $("#content-section");
+      if (mainContent.length === 0) mainContent = $("#passion-point-section");
+      if (mainContent.length === 0) mainContent = $(".page-content");
+      if (mainContent.length === 0) mainContent = $("#main");
+      if (mainContent.length === 0) mainContent = $("main");
+      if (mainContent.length === 0) mainContent = $("body");
+
+      mainContent.find([
+        "script", "style", "noscript", "nav", "footer", "header", "aside", 
+        "[id*='localnav']", "[class*='localnav']", 
+        "[id*='globalnav']", "[class*='globalnav']",
+        "[id*='feedback']", "[class*='feedback']", 
+        "[id*='selector']", "[class*='selector']", 
+        "[id*='banner']", "[class*='banner']",
+        "[id*='breadcrumb']", "[class*='breadcrumb']",
+        ".book.topic-search", ".nojs-version-name", "#toc-hidden-content", 
+        "#helpful-rating-wrapper", ".LinkUniversal", ".cis-bar", ".cis-bar-text", ".toggle-toc"
+      ].join(", ")).remove();
+      
+
+      return mainContent.html();
+    } catch (error) {
+      console.error('Помилка вилучення HTML:', error.message);
+      return null;
+    }
+  }
+
   cleanHtmlContent(data) {
     try {
       const $ = cheerio.load(data);
@@ -192,15 +224,19 @@ class ScraperService {
       if (mainContent.length === 0) mainContent = $("body");
 
       // Видаляємо глобальні непотрібні блоки, селектори версій, фідбеки, бокові меню тощо
-      mainContent
-        .find("script, style, noscript, nav, footer, header, aside, .globalnav, .localnav")
-        .remove();
+      mainContent.find([
+        "script", "style", "noscript", "nav", "footer", "header", "aside", 
+        "[id*='localnav']", "[class*='localnav']", 
+        "[id*='globalnav']", "[class*='globalnav']",
+        "[id*='feedback']", "[class*='feedback']", 
+        "[id*='selector']", "[class*='selector']", 
+        "[id*='banner']", "[class*='banner']",
+        "[id*='breadcrumb']", "[class*='breadcrumb']",
+        ".book.topic-search", ".nojs-version-name", "#toc-hidden-content", 
+        "#helpful-rating-wrapper", ".LinkUniversal", ".cis-bar", ".cis-bar-text", ".toggle-toc"
+      ].join(", ")).remove();
 
-      mainContent
-        .find(
-          ".book.topic-search, .nojs-version-name, #toc-hidden-content, #helpful-rating-wrapper, [id*='feedback'], [class*='feedback'], [id*='selector'], [class*='selector'], .LinkUniversal, .cis-bar, .cis-bar-text, .toggle-toc",
-        )
-        .remove();
+      
 
       // Проходимо по всіх елементах, які можуть мати важливий прихований текст (іконки, кнопки, посилання, svg)
       mainContent.find("img, svg, button, a, span").each((_, el) => {

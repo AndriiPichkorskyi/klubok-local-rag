@@ -16,7 +16,7 @@
 import { AXIS_FIELDS, formatDurationLong, pluralize } from "./benchmarkAxes";
 import { BENCHMARK_KINDS } from "./useBenchmarkAxes";
 
-/** Один рядок ціни: «8 режимів × 153 кейси = 1224 прогони ≈ 1 год». */
+/** Один рядок ціни: «8 режимів × 68 кейсів = 544 прогони ≈ 1 год». */
 function PlanRow({ kind, plan, planning }) {
   if (!plan) {
     return (

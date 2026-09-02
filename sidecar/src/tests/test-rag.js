@@ -1,4 +1,3 @@
-import pLimit from "p-limit";
 import fs from "fs/promises";
 import path from "path";
 import pc from "picocolors";
@@ -10,6 +9,7 @@ import { db } from "../services/db.service.js";
 import { renderReportTable } from "../cli/reports.js";
 import { logger } from "../services/logger.service.js";
 import { createReportStream } from "./report-stream.js";
+import { runTestQueue } from "./test-queue.js";
 import {
   resolveBenchmarkPlan,
   assertModeLimit,
@@ -43,13 +43,19 @@ import { createHash } from "crypto";
  *                    failed: number, passRate: number, reportPath: string}>}
  */
 export async function runRagTests(onProgress = () => {}, options = {}) {
+  const testCases = Array.isArray(options.testCases) ? options.testCases : TEST_CASES;
+  const benchmarkKind = options.benchmarkKind === "external" ? "external" : "rag";
+  const benchmarkLabel = benchmarkKind === "external" ? "EXTERNAL-тести" : "RAG-бенчмарк";
+  const stageName = benchmarkKind === "external" ? "externalBenchmark" : "ragBenchmark";
+  const allowContextMatch = options.allowContextMatch !== false;
+
   // Override models if requested
   const savedChatModel = config.ollama.chatModel;
   const savedEmbedModel = config.embedModelName;
   if (options.overrideChatModel) config.ollama.chatModel = options.overrideChatModel;
   if (options.overrideEmbedModel) config.embedModelName = options.overrideEmbedModel;
 
-  console.log(pc.bgCyan(pc.black(" ЗАПУСК АВТОМАТИЗОВАНОГО ТЕСТУВАННЯ RAG")));
+  console.log(pc.bgCyan(pc.black(` ЗАПУСК ${benchmarkLabel.toUpperCase()} `)));
 
   const status = await ollama.checkAvailability();
   if (!status.isAvailable) {
@@ -71,7 +77,9 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
   // запуску: якщо процес уб'ють ззовні, у журналі лишиться, на якому режимі
   // й на якому кейсі це сталося.
   await logger.init();
-  logger.installProcessHandlers({ role: "test-rag" });
+  logger.installProcessHandlers({
+    role: benchmarkKind === "external" ? "test-external" : "test-rag",
+  });
   logger.startMemoryWatch();
   // Попередження про пам'ять має дійти до людини ДО падіння — і в журнал,
   // і в прогрес (у панелі розробника це той самий рядок, що й хід тестів).
@@ -100,7 +108,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     const plan = resolveBenchmarkPlan({
       benchmark: benchmarkConfig,
       overrides: options?.axes ?? null,
-      caseCount: TEST_CASES.length,
+      caseCount: testCases.length,
       extra: {
         chatModel: config.ollama.chatModel,
         embedModel: config.embedModelName,
@@ -118,8 +126,16 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     // Масштаб прогону — на екран і в прогрес ДО першого запиту до LLM.
     console.log(pc.bgCyan(pc.black(` (${modes.length} РЕЖИМІВ ТЕСТУВАННЯ) `)));
     matrixLines.forEach((line) => console.log(pc.cyan(line)));
-    onProgress(`Старт: ${modes.length} режимів × ${TEST_CASES.length} кейсів = ${totalRuns} прогонів LLM.`, 0);
-    logger.event("info", "test.matrix", { axes, modes: modes.length, totalRuns }, matrixLines.join(" "));
+    onProgress(
+      `Старт: ${modes.length} режимів × ${testCases.length} кейсів = ${totalRuns} прогонів LLM.`,
+      0,
+    );
+    logger.event(
+      "info",
+      "test.matrix",
+      { kind: benchmarkKind, axes, modes: modes.length, totalRuns },
+      matrixLines.join(" "),
+    );
 
     // Мова кожного кейса визначається ОДИН раз до прогону, а не на кожному
     // режимі: значення однакове для всіх режимів, а лічильник «вгаданих»
@@ -127,7 +143,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     const caseLanguage = new Map();
     let guessedLanguageCases = 0;
     const languageCensus = {};
-    for (const test of TEST_CASES) {
+    for (const test of testCases) {
       const resolved = resolveCaseLanguage(test);
       caseLanguage.set(test, resolved);
       if (resolved.languageSource === "auto") guessedLanguageCases += 1;
@@ -159,17 +175,19 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     const reportsDir = path.join(config.paths.sidecarDir, "test-reports");
     await fs.mkdir(reportsDir, { recursive: true });
     const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
-    const reportPath = path.join(reportsDir, `report-${dateStr}.json`);
+    const reportName =
+      benchmarkKind === "external" ? `report-external-${dateStr}.json` : `report-${dateStr}.json`;
+    const reportPath = path.join(reportsDir, reportName);
 
     const reportHeader = {
       timestamp: new Date().toISOString(),
-      totalCases: TEST_CASES.length,
+      totalCases: testCases.length,
       models: {
         embed: config.embedModelName,
         chat: config.ollama.chatModel,
       },
       // Нове у звіті: матриця, якою його отримано, і очікуваний масштаб.
-      benchmarkKind: "rag",
+      benchmarkKind,
       axes,
       modeCount: modes.length,
       expectedRuns: totalRuns,
@@ -190,7 +208,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       );
 
       // Етап у журналі: саме він показує в пульсі, що процес робив у мить смерті.
-      logger.setStage("ragBenchmark", {
+      logger.setStage(stageName, {
         mode,
         modeIndex: modes.indexOf(modeObj) + 1,
         modesTotal: modes.length,
@@ -200,7 +218,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       await report.beginMode(mode, modeObj.params);
 
       // Перевизначаємо конфіг в пам'яті для поточного режиму.
-      // Усі кейси режиму йдуть з однаковими осями, тож паралельність (p-limit)
+      // Усі кейси режиму йдуть з однаковими осями, тож керована черга
       // не бачить чужих значень.
       config.rag.searchMode = modeObj.search;
       config.rag.enableXmlTags = modeObj.xml;
@@ -212,7 +230,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       // задачами). У самому конфізі на час такого режиму лишається null.
       config.rag.seed = isRandomSeedMode(modeObj) ? null : modeObj.seed;
       config.rag.temperature = modeObj.temperature;
-      
+
       if (modeObj.chatModel) config.ollama.chatModel = modeObj.chatModel;
       if (modeObj.embedModel) {
         config.embedModelName = modeObj.embedModel;
@@ -230,16 +248,22 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       let failed = 0;
       const startTime = Date.now();
       // Замість масиву результатів — лічильники: усе інше вже на диску.
-      const acc = { count: 0, tpsSum: 0, ttftSum: 0, memSum: 0, sysRamSum: 0, sysPowerSum: 0, inputTokens: 0, outputTokens: 0 };
-
-      const CONCURRENCY = config.rag.testConcurrency;
-
-      const limit = pLimit(CONCURRENCY);
+      const acc = {
+        count: 0,
+        timeMs: 0,
+        tpsSum: 0,
+        ttftSum: 0,
+        memSum: 0,
+        sysRamSum: 0,
+        sysPowerSum: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      };
       let testIndexCounter = 0;
 
-      const batchPromises = TEST_CASES.map((test) =>
-        limit(async () => {
-          if (options.signal?.aborted) throw options.signal.reason;
+      await runTestQueue(
+        testCases,
+        async (test) => {
           const testIndex = testIndexCounter++;
           // Зерно цього конкретного запиту: значення осі або нове випадкове.
           const caseSeed = nextSeedFor(modeObj);
@@ -277,7 +301,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
           const { response, recommendedApp, rawLlmOutput, retrievalStats } = result;
 
           console.log(
-            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${TEST_CASES.length}:`)} "${test.query}"`
+            `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${testCases.length}:`)} "${test.query}"`,
           );
 
           let isSuccess = false;
@@ -326,7 +350,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
                 // Саме contextApps, а не alternativeApps: останній навмисно
                 // порожній, коли рекомендації немає (NOT_FOUND/INVALID_QUERY),
                 // а ця метрика міряє якість пошуку, а не вибір LLM.
-                if (result.contextApps) {
+                if (allowContextMatch && result.contextApps) {
                   isAlternativeSuccess = expected.some((app) =>
                     result.contextApps.some((alt) => alt.toLowerCase() === app.toLowerCase()),
                   );
@@ -385,6 +409,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
 
           const resObj = {
             query: test.query,
+            ...(test.comparisonId ? { comparisonId: test.comparisonId } : {}),
             language,
             languageSource,
             seed: usedSeed,
@@ -415,7 +440,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             `[${mode}] ${doneRuns}/${totalRuns}: "${test.query}"`,
             Math.round((doneRuns / totalRuns) * 100),
           );
-          logger.setStage("ragBenchmark", {
+          logger.setStage(stageName, {
             mode,
             modeIndex: modes.indexOf(modeObj) + 1,
             modesTotal: modes.length,
@@ -426,23 +451,26 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
 
           // Результат одразу лягає на диск і більше не тримається в пам'яті.
           acc.count += 1;
+          acc.timeMs += queryTime;
           acc.tpsSum += tps;
           acc.ttftSum += ttft;
           acc.memSum += memUsageMB;
-          acc.sysRamSum += (sysMetrics.ram_mb || 0);
-          acc.sysPowerSum += (sysMetrics.power_score || 0);
+          acc.sysRamSum += sysMetrics.ram_mb || 0;
+          acc.sysPowerSum += sysMetrics.power_score || 0;
           acc.inputTokens += inputTokens;
           acc.outputTokens += outputTokens;
           await report.addResult(resObj);
-          // Нічого не повертаємо навмисно: Promise.all зібрав би масив
-          // результатів і звів нанівець увесь сенс потокового запису.
-        }),
+          // Нічого не повертаємо навмисно: у пам'яті лишаються лише лічильники.
+        },
+        {
+          concurrency: config.rag.testConcurrency,
+          control: options.control,
+          signal: options.signal,
+        },
       );
 
-      await Promise.all(batchPromises);
-
       const totalTime = Date.now() - startTime;
-      const passRate = Math.round((passed / TEST_CASES.length) * 100);
+      const passRate = Math.round((passed / testCases.length) * 100);
 
       // Ті самі середні метрики, але з лічильників, а не з масиву результатів.
       const divisor = acc.count || 1;
@@ -450,7 +478,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
         passed,
         failed,
         passRate,
-        totalTimeMs: totalTime,
+        totalTimeMs: benchmarkKind === "external" ? acc.timeMs : totalTime,
         wallTimeMs: totalTime,
         avgTps: acc.tpsSum / divisor,
         avgTtft: acc.ttftSum / divisor,
@@ -465,8 +493,8 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       logger.event(
         "info",
         "test.mode.done",
-        { mode, ...summary[mode], memory: logger.memorySnapshot() },
-        `Режим ${mode} завершено: ${passed}/${TEST_CASES.length}`,
+        { kind: benchmarkKind, mode, ...summary[mode], memory: logger.memorySnapshot() },
+        `Режим ${mode} завершено: ${passed}/${testCases.length}`,
       );
     }
 
@@ -505,7 +533,9 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     // на одному зразку min = max = mean, і рядок був би шумом.
     const multiSeedGroups = Object.entries(seedGroups).filter(([, g]) => g.runs > 1);
     if (multiSeedGroups.length > 0) {
-      console.log(pc.bold(`\n📈 РОЗКИД PASS RATE ПО SEED-АХ (${axes.seed.length} прогони на режим):`));
+      console.log(
+        pc.bold(`\n📈 РОЗКИД PASS RATE ПО SEED-АХ (${axes.seed.length} прогони на режим):`),
+      );
       console.log("-".repeat(101));
       console.log(
         pc.bold("Режим".padEnd(32)) +
@@ -560,7 +590,11 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     // Зведення по осях: скільки кейсів дали ПОБАЙТОВО однаковий вивід між
     // режимами, що відрізняються рівно цією віссю.
     if (axisComparison.length > 0) {
-      console.log(pc.bold(`\n🧬 ІДЕНТИЧНІСТЬ ВИВОДУ LLM ПО ОСЯХ (порівнянних пар: ${axisComparison.length}):`));
+      console.log(
+        pc.bold(
+          `\n🧬 ІДЕНТИЧНІСТЬ ВИВОДУ LLM ПО ОСЯХ (порівнянних пар: ${axisComparison.length}):`,
+        ),
+      );
       console.log("-".repeat(101));
       console.log(
         pc.bold("Вісь".padEnd(16)) +
@@ -608,7 +642,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     const failed = modeSummaries.reduce((acc, s) => acc + s.failed, 0);
     const totalRunCases = passed + failed;
 
-    onProgress("RAG-бенчмарк завершено.", 100);
+    onProgress(`${benchmarkLabel} завершено.`, 100);
 
     return {
       ok: failed === 0,
@@ -623,11 +657,10 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     Object.assign(config.rag, savedRag);
     config.ollama.chatModel = savedChatModel;
     config.embedModelName = savedEmbedModel;
-    // Прогін обірвався — не лишаємо відкритий дескриптор. Недописаний звіт
-    // лишається файлом *.json.partial: він не ламає reports.list, але
-    // показує, докуди дійшли.
+    // Прогін обірвався — не лишаємо відкритий дескриптор. Валідний знімок
+    // лишається файлом *.json.partial і показує, докуди дійшли.
     if (report) await report.abort();
-    logger.setStage("ragBenchmark", null);
+    logger.setStage(stageName, null);
     unsubscribeMemoryWarning();
   }
 }

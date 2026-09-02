@@ -31,18 +31,49 @@ export function ErrorBox({ text, kind = "error" }) {
  * Серверний id показуємо тут же: саме його приймає job.cancel, і поки першої
  * події прогресу не було — його немає, про що чесно й написано.
  */
-export function StopButton({ op, onCancel }) {
+export function StopButton({ op, onCancel, label = "Стоп" }) {
   if (!onCancel || !op?.running) return null;
   return (
     <div className="dp-stop-row">
       <button type="button" className="dp-danger dp-small" onClick={onCancel} disabled={Boolean(op.cancelling)}>
-        {op.cancelling ? "Зупиняю…" : "Стоп"}
+        {op.cancelling ? "Завершую…" : label}
       </button>
       <span className="dp-op-msg">
         {typeof op.rpcId === "number"
           ? `job.cancel · id ${op.rpcId}`
           : "серверний id ще невідомий"}
       </span>
+    </div>
+  );
+}
+
+/** Пауза тестів і продовження з кількістю потоків, обраною в інтерфейсі. */
+export function TestPauseControls({ op, onPause, onResume, defaultConcurrency = 1 }) {
+  if (!op?.running || !onPause || !onResume) return null;
+  const normalConcurrency = Math.max(1, Number(defaultConcurrency ?? op.testConcurrency) || 1);
+
+  if (!op.paused) {
+    return (
+      <div className="dp-stop-row">
+        <button type="button" className="dp-small" onClick={onPause} disabled={Boolean(op.pausing)}>
+          {op.pausing ? "Ставлю на паузу…" : "Пауза"}
+        </button>
+        <span className="dp-op-msg">активні запити спершу завершаться</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dp-stop-row">
+      <button
+        type="button"
+        className="dp-small"
+        onClick={() => onResume(normalConcurrency)}
+        disabled={Boolean(op.resuming)}
+      >
+        {op.resuming ? "Продовжую…" : `Продовжити ×${normalConcurrency}`}
+      </button>
+      <span className="dp-op-msg">тести на паузі</span>
     </div>
   );
 }
@@ -63,6 +94,10 @@ export default function OpButton({
   label,
   onClick,
   onCancel,
+  onPause,
+  onResume,
+  stopLabel = "Стоп",
+  defaultConcurrency = 1,
   danger = false,
   disabled = false,
   children,
@@ -91,8 +126,15 @@ export default function OpButton({
             {typeof op.pct === "number" ? `${op.pct}% · ` : ""}
             {op.msg || "виконується…"}
           </div>
-          <StopButton op={op} onCancel={onCancel} />
+          <TestPauseControls
+            op={op}
+            onPause={onPause}
+            onResume={onResume}
+            defaultConcurrency={defaultConcurrency}
+          />
+          <StopButton op={op} onCancel={onCancel} label={stopLabel} />
           <CancelNote op={op} />
+          {op.controlReason ? <div className="dp-op-msg dp-err">{op.controlReason}</div> : null}
         </>
       ) : null}
 

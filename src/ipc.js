@@ -22,6 +22,9 @@ export const query = (text, options = {}, clientRef = null) =>
   rpc("query", { text, ...options }, clientRef);
 export const dbStats = () => rpc("db.stats");
 export const jobCancel = (id) => rpc("job.cancel", { id });
+export const testsPause = (id) => rpc("tests.pause", { id });
+export const testsResume = (id, concurrency) =>
+  rpc("tests.resume", concurrency == null ? { id } : { id, concurrency });
 
 // Керування самим мостом.
 export const sidecarStatus = () => invoke("sidecar_status");

@@ -32,9 +32,18 @@ function AppCard({
 }) {
   const ref = useScrollIntoView(selected);
   const firstDocTitle = docs?.[0]?.title || "";
-  const [stepsOpen, setStepsOpen] = useState(false);
+  const [expandedDocs, setExpandedDocs] = useState(new Set());
 
-  const renderDocs = () => {
+  const toggleDoc = (idx) => {
+    setExpandedDocs(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+const renderDocs = () => {
     if (!docs || docs.length === 0) {
       return (
         <span className="sp-note" style={{ display: 'block', marginBottom: '16px' }}>
@@ -46,7 +55,13 @@ function AppCard({
     return (
       <div className="sp-steps">
         {docs.map((doc, idx) => {
-          const isClamped = doc.content.length > CLAMP_CHARS && !stepsOpen;
+          const isOpen = expandedDocs.has(idx);
+          const textLength = (doc.htmlContent || doc.content).length;
+          
+          // Перша стаття частково відкрита (до 900 символів), інші - повністю сховані
+          const limit = idx === 0 ? CLAMP_CHARS : 0;
+          const isClamped = textLength > limit && !isOpen;
+          
           return (
             <div 
               key={idx} 
@@ -60,20 +75,23 @@ function AppCard({
               <div className="sp-doc-title">
                 З довідки: {doc.title}
               </div>
-              <div className={isClamped ? "sp-steps-body is-clamped" : "sp-steps-body"}>
-                <Markdown className="sp-md" text={doc.content} />
-              </div>
+              
+              {(!isClamped || limit > 0) && (
+                <div className={isClamped ? "sp-steps-body is-clamped" : "sp-steps-body"}>
+                  <Markdown className="sp-md" text={doc.htmlContent || doc.content} isHtml={!!doc.htmlContent} />
+                </div>
+              )}
+              
+              {textLength > limit && (
+                <div className="sp-progress-actions">
+                  <button type="button" onClick={() => toggleDoc(idx)}>
+                    {isOpen ? "Згорнути статтю" : "Показати статтю повністю"}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}
-        
-        {docs.some(doc => doc.content.length > CLAMP_CHARS) ? (
-          <div className="sp-progress-actions">
-            <button type="button" onClick={() => setStepsOpen(!stepsOpen)}>
-              {stepsOpen ? "Згорнути статті" : "Показати статті повністю"}
-            </button>
-          </div>
-        ) : null}
       </div>
     );
   };

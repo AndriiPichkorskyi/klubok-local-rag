@@ -50,8 +50,10 @@ WebSocket, `ws://127.0.0.1:<config.rpc.port>` (за замовчуванням 1
 | `db.stats` | — | статистика бази + готовність кожної моделі (див. нижче) |
 | `db.clear` | `{target}` | `target`: all/web/local/apps/document_links/raw_html/web_documents/lancedb/intents |
 | `db.unlock` | `{force?}` | примусово зняти файл-замок (див. «Замок на операції запису») |
-| `tests.run` | `{axes?}` | `runRagTests(onProgress, {axes})` |
-| `tests.runExternal` | `{axes?}` | `runExternalTests(onProgress, {axes})` |
+| `tests.run` | `{axes?, concurrency?}` | `runRagTests(onProgress, {axes, control})` |
+| `tests.runExternal` | `{axes?, concurrency?}` | `runExternalTests(onProgress, {axes, control})` |
+| `tests.pause` | `{id}` | ставить активний `tests.run*` на паузу після завершення вже запущених кейсів |
+| `tests.resume` | `{id, concurrency?}` | продовжує паузу; може змінити паралельність, напр. на `1` |
 | `tests.plan` | `{kind?, axes?}` | ціна прогону ДО запуску (нічого не запускає) |
 | `reports.list` | — | список файлів у `sidecar/test-reports/` |
 | `reports.read` | `{name}` | вміст одного звіту; `name` — лише ім'я файлу, без шляхів |
@@ -208,11 +210,15 @@ contextApps, executionTimeMs, ollamaMetrics, retrievalStats}`. Поля, яки�
       "column": "vectorized_0_6b",        // колонка-прапорець у таблиці apps
       "columnExists": true,
       "isCurrent": true,
-      "vectorizedApps": 129,              // програм з прапорцем = 1
+      "vectorizedApps": 129,              // унікальних програм у фактичній LanceDB
+      "sqliteVectorizedApps": 129,        // старий прапорець SQLite, для діагностики
+      "vectorizedSource": "lancedb",      // покриття пораховане з реальної LanceDB
       "notVectorizedApps": 0,
       "ready": true,                      // векторизовані ВСІ програми
       "lancedb": {"path": "…/lancedb_data_qwen3-embedding_0.6b",
-                  "exists": true, "sizeBytes": 73341439, "sizeMb": "69.94", "files": 712}
+                  "exists": true, "tableExists": true, "chunks": 15788,
+                  "apps": 129, "sourceTypes": {"WEB": 14183, "INTENT": 60},
+                  "sizeBytes": 73341439, "sizeMb": "69.94", "files": 712}
     },
     {"model": "qwen3-embedding:4b", "column": "vectorized_4b", "vectorizedApps": 0,
      "ready": false, "lancedb": {"exists": false, "sizeBytes": 0, "sizeMb": "0.00", "files": 0}}
@@ -227,11 +233,13 @@ contextApps, executionTimeMs, ollamaMetrics, retrievalStats}`. Поля, яки�
 }
 ```
 
-Список моделей **не захардкоджений**: він виводиться з конфіга
-(`embedModelName` + `bootstrap.requiredModels` + `bootstrap.optionalModels`) і
-звіряється зі схемою таблиці `apps` — модель потрапляє у `models`, якщо в схемі є
-її колонка `vectorized_<тег>` (або якщо це поточна модель). Колонка, для якої в
-конфізі немає моделі, теж потрапляє у список, але з `"model": null`.
+Список моделей **не захардкоджений**: він об'єднує конфіг (`embedModelName` +
+`bootstrap.requiredModels` + `bootstrap.optionalModels`) із фактичними теками
+`sidecar/lancedb_data_*`. Тому база, створена старим конфігом або окремим
+експериментом, теж потрапляє в `models`. Покриття рахується за унікальними
+`appName` у LanceDB; старий SQLite-прапорець лишається окремим діагностичним
+полем. Осиротілі технічні колонки `vectorized_*` не є моделями й окремими
+рядками не повертаються.
 Поля `appsCount` і `chunksCount` лишаються сумісними з попередньою версією.
 
 ### `bootstrap.check`
@@ -350,6 +358,10 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
 провалився). Недоступна Ollama — це `error` у відповіді, а не завершення
 процесу. Глобальний `config` після прогону лишається таким, яким був до нього.
 
+Опційний `concurrency` задає кількість паралельних кейсів саме для цього
+прогону. Без нього береться `rag.testConcurrency` із конфіга. Значення мусить
+бути додатним цілим числом; його також можна змінити через `tests.resume`.
+
 **Обидва** методи перебирають **ту саму матрицю режимів** — `rag.benchmark.axes`
 у `config/pipeline.config.json`. Осі ШІСТЬ: `search`, `xml`, `reorder`,
 `systemPrompt` (`system` / `inline` / `none`), `seed` (числа, `null` або
@@ -359,13 +371,26 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
 легасі-значенні (`sp=system`, `seed=42`, `t=0.1`) і не варіює, у назві режиму
 не згадується взагалі.
 
-`tests.runExternal` раніше йшов ОДНИМ фіксованим режимом `external_hybrid` і
-матрицю не читав. Тепер він проганяє свої 153 кейси по кожному режиму, а назви
-режимів у нього ті самі, що й у `tests.run` (`hybrid+XML+Reorder|t=0.5|seed=3`);
-відрізнити звіти одне від одного далі можна полем `benchmarkKind`. Причина
-переносу експерименту сюди — роздільна здатність: 26 кейсів RAG-набору дають
-3.8 п.п. на кейс і вперлись у стелю (35 із 36 режимів нічного прогону — рівно
-92%, σ = 0), тоді як 153 зовнішніх кейси при pass rate ≈ 59% рухаються.
+`tests.runExternal` використовує парний набір однакових задач: англійські
+запити з `tests/test-external-cases.js` та їхні українські відповідники з
+`tests/test-external-cases-uk.js`. Обидві версії мають однаковий
+`comparisonId`, тип і очікувану програму, тому `byLanguage` порівнює саме мову,
+а не різну складність вибірок. Очікування — назви програм із цієї бази, а не
+capability-id з іншого проєкту; арифметика, нагадування і системний запис екрана
+є валідними задачами. Старий прогін збережено у
+`tests/test-external.legacy.js`. Назви режимів ті самі, що й у `tests.run`;
+звіти відрізняються полем `benchmarkKind` і префіксом `report-external-`.
+
+### `tests.pause`, `tests.resume`
+
+Обидва методи приймають серверний `id` активного `tests.run` або
+`tests.runExternal`. Пауза не обриває HTTP-запит посеред відповіді: уже активні
+кейси завершуються і дописують результат, але нові з черги не стартують.
+
+`tests.resume({id, concurrency: 1})` продовжує той самий прогін з одного потоку;
+вже готові кейси не повторюються. Без `concurrency` лишається поточне значення.
+Відповідь обох методів: `{id, method, paused, concurrency, active, queued}`.
+Неактивний id, не-тестова задача або `concurrency < 1` — помилка методу.
 
 **`axes` у параметрах** (панель розробника) перекриває осі поштучно: задана
 вісь замінює конфігову цілком, незадана береться з конфіга. Тобто конфіг
@@ -389,9 +414,12 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
   (порівнювати побайтово вивід на випадковому зерні немає сенсу);
 * усереднення по ньому живе в окремому блоці `randomSeedRuns`.
 
-Звіт пишеться на диск **поступово**, у міру готовності кожного кейса, а не одним
-обсягом наприкінці, і поки прогін триває, файл має ім'я `<звіт>.json.partial`
-і перейменовується на `.json` лише при штатному завершенні.
+Звіт пишеться на диск **поступово**, пакетами до 50 готових JSON-фрагментів, а
+не одним обсягом наприкінці. Поки прогін триває, файл має ім'я
+`<звіт>.json.partial`; після штатного завершення з'являється `.json`, а
+`.partial` прибирається.
+Кожна видима версія `.partial` є валідним JSON-знімком: поточний режим має
+`summary: null` та `inProgress: true`, а заміна файла відбувається атомарно.
 
 **Форма звіту розширилась** (стара частина — `timestamp`, `totalCases`,
 `models`, `modes.*.summary` — лишилась на місці, тож `cli/reports.js` і
@@ -410,6 +438,7 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
       "params": {"search","xml","reorder","systemPrompt","seed",
                  "temperature","chatModel","embedModel","seedKind"},  // перед results
       "results": [ {…, "rawOutputHash": "<sha256 сирої відповіді LLM>",
+                    "comparisonId": "external-01",     // у парних EXTERNAL-кейсах
                     "language": "uk"|"en"|"neutral",
                     "languageSource": "explicit"|"auto",
                     "seed": 42|1659155928|null,          // НОВЕ: чим отримано кейс
@@ -437,8 +466,9 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
   `uk`, `en` і `neutral` — назви брендів («Photoshop»), безглуздя
   («asdfasdf qwerty», «івапівпавіп») і символьні токени («pdf»), які не
   належать жодній мові й не потрапляють ні в українську, ні в англійську
-  метрику. Мова задана ЯВНО полем `language` у `tests/test-cases.js` і в трьох
-  `dataset_*.json`; автовизначення (`franc-min`) — лише запобіжник для нових
+  метрику. Мова задана ЯВНО полем `language` у `tests/test-cases.js` і
+  `tests/test-external-cases.js` / `tests/test-external-cases-uk.js`;
+  автовизначення (`franc-min`) — лише запобіжник для нових
   кейсів без поля, і такий кейс має `languageSource: "auto"`, а їхню кількість
   звіт показує в `languageBreakdown.guessedCases`.
 * `summary.byLanguage.<мова>` = `{cases, passed, failed, guessed, passRate}`;
@@ -465,9 +495,10 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
 
 Наслідки потокового запису:
 
-* обірваний прогін лишає на диску `*.json.partial` з усім, що встигло дорахуватись;
+* обірваний прогін лишає на диску валідний `*.json.partial` з усім, що встигло
+  дорахуватись;
 * `reports.list` і `reports.read` таких файлів **не бачать** (фільтр `.json`),
-  тому інтерфейсу ніколи не дістається недописаний JSON.
+  але людина або інший інструмент може безпечно прочитати знімок напряму.
 
 ### `tests.plan`
 Ціна прогону ДО його запуску. Нічого не запускає, нічого не змінює, замок не
@@ -482,7 +513,7 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
   "axes": {…},          // осі, якими піде прогін (конфіг + перекриття з params)
   "configAxes": {…},    // осі самого конфіга — панель показує, що успадковано
   "modeNames": ["hybrid+XML+Reorder|t=0.5|seed=1", …],
-  "modeCount": 6, "caseCount": 153, "totalRuns": 918,
+  "modeCount": 6, "caseCount": 68, "totalRuns": 408,
   "maxModes": 36, "blocked": false, "blockedReason": null,
   "lines": ["Матриця режимів …", …],   // той самий опис, що друкує сам прогін
   "estimate": {"msPerRun": 6712, "totalMs": 6161616,
@@ -491,8 +522,8 @@ elapsedMs, at}`, де `raw` — сира відповідь моделі (`null`
 ```
 
 * `caseCount` для `external` рахується ТИМ САМИМ кодом, що й прогін
-  (`loadExternalCases`), а не як сума довжин датасетів: кейс без відповідної
-  програми в базі відкидається. Значення кешується на час життя процесу.
+  (`loadExternalCases`), тому після зміни набору план одразу показує новий масштаб.
+  Значення кешується на час життя процесу.
 * `estimate.msPerRun` — wall-час одного прогону з ОСТАННЬОГО звіту того ж виду
   (поле `summary.wallTimeMs`; у старих звітах — `totalTimeMs`, для external
   поділений на `rag.testConcurrency`). Звітів немає — береться виміряний
@@ -522,7 +553,12 @@ Sidecar стежить за купою V8 (межа береться з `v8.getH
 
 ## Діагностичний журнал sidecar
 
-Усе, що описано вище, паралельно лягає у файл — саме тому, що stdout зникає разом
+Файлове журналювання керується `config.logging.enabled`. За замовчуванням у
+поточному конфігу воно вимкнене: `sidecar/logs` не створюється і файли
+`sidecar.N.log` / `queries.log` не дописуються. Це не стосується журналу
+walkthrough — у нього окремий тумблер `walkthrough.journal`.
+
+Коли тумблер увімкнено, усе, що описано вище, паралельно лягає у файл — саме тому, що stdout зникає разом
 зі скролом термінала (інцидент 26.08: sidecar зник посеред бенчмарку, і слідів не
 лишилось). Журнал: `sidecar/logs/sidecar.N.log`, символьне посилання
 `sidecar/logs/current.log` завжди вказує на активний файл. Формат — JSON-рядки

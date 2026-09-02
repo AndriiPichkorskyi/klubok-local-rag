@@ -12,7 +12,7 @@ import { useMemo, useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import Section from "./Section";
-import { ProgressBar, StopButton, CancelNote } from "./OpButton";
+import { ProgressBar, StopButton, CancelNote, TestPauseControls } from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { useFullRun } from "./useFullRun";
 import { buildPlan, defaultSelection, describeStepResult, testsFailed, PIPELINE_STEPS, TEST_STEPS } from "./fullRunPlan";
@@ -58,6 +58,9 @@ export default function FullRunSection({
   ops,
   run,
   cancelOp,
+  pauseOp,
+  resumeOp,
+  testConcurrency = 1,
   note,
   embedModels,
   configModel,
@@ -70,6 +73,7 @@ export default function FullRunSection({
   const [models, setModels] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [selectedChat, setSelectedChat] = useState([]);
+  const [concurrency, setConcurrency] = useState(() => Math.max(1, Number(testConcurrency) || 1));
 
   useEffect(() => {
     let unlisten;
@@ -81,6 +85,18 @@ export default function FullRunSection({
   
   const fullRun = useFullRun({ run, cancelOp, note, onFinished });
   const { entries, state, running, stopping, totalMs } = fullRun;
+  const selectedConcurrency = Math.max(1, Math.trunc(Number(concurrency) || 1));
+  const activeTestEntry = entries.find(
+    (entry) =>
+      entry.status === "running" &&
+      (entry.method === "tests.run" || entry.method === "tests.runExternal"),
+  );
+  const activeTestOp = activeTestEntry ? opState(ops, activeTestEntry.key) : null;
+  const concurrencyLocked = running && !activeTestOp?.paused;
+
+  useEffect(() => {
+    if (!running) setConcurrency(Math.max(1, Number(testConcurrency) || 1));
+  }, [running, testConcurrency]);
 
   useEffect(() => {
     if (running) {
@@ -93,8 +109,24 @@ export default function FullRunSection({
   // Осі бенчмарку їдуть у кроки tests.* параметром: те, що людина бачить у
   // формі, і те, чим піде прогін, — один і той самий об'єкт.
   const plan = useMemo(
-    () => buildPlan(selection, models, configModel, { axes: benchmark?.axesParam || null }, selectedChat, configChatModel),
-    [selection, models, configModel, benchmark?.axesParam, selectedChat, configChatModel],
+    () =>
+      buildPlan(
+        selection,
+        models,
+        configModel,
+        { axes: benchmark?.axesParam || null, concurrency: selectedConcurrency },
+        selectedChat,
+        configChatModel,
+      ),
+    [
+      selection,
+      models,
+      configModel,
+      benchmark?.axesParam,
+      selectedConcurrency,
+      selectedChat,
+      configChatModel,
+    ],
   );
 
   // Запобіжник maxModes спрацював саме на тому тесті, який обрано? Тоді
@@ -193,6 +225,23 @@ export default function FullRunSection({
         ))}
       </div>
 
+      <div className="dp-test-controls">
+        <label className="row dp-test-concurrency">
+          <span>Кількість потоків для тестів</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={concurrency}
+            disabled={concurrencyLocked}
+            onChange={(event) =>
+              setConcurrency(Math.max(1, Math.trunc(Number(event.target.value) || 1)))
+            }
+          />
+        </label>
+        <span className="muted dp-small">Під час тесту значення змінюється після паузи.</span>
+      </div>
+
       {/* Осі бенчмарку. Секція прогону — саме те місце, де їх задають перед ніччю. */}
       {benchmark ? <BenchmarkAxesForm benchmark={benchmark} disabled={running} /> : null}
 
@@ -213,16 +262,33 @@ export default function FullRunSection({
           disabled={running || plan.length === 0 || startBlocked}
         >
           {running
-            ? `Прогін триває… ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
+            ? activeTestOp?.paused
+              ? `Тест на паузі · ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
+              : `Прогін триває… ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
             : `Запустити прогін (${plan.length} ${stepsWord(plan.length)} поспіль)`}
         </button>
+        {activeTestEntry && activeTestOp ? (
+          <TestPauseControls
+            op={activeTestOp}
+            onPause={() => pauseOp?.(activeTestEntry.key)}
+            onResume={(nextConcurrency) => resumeOp?.(activeTestEntry.key, nextConcurrency)}
+            defaultConcurrency={selectedConcurrency}
+          />
+        ) : null}
         {running ? (
           <button type="button" className="dp-danger" onClick={fullRun.stop} disabled={stopping}>
-            {stopping ? "Зупиняю послідовність…" : "Стоп (уся послідовність)"}
+            {stopping ? "Завершую послідовність…" : "Завершити весь прогін"}
           </button>
         ) : null}
         {plan.length === 0 ? <span className="muted dp-small">не обрано жодного кроку</span> : null}
       </div>
+
+      {running && !activeTestEntry && plan.some((entry) => entry.method.startsWith("tests.")) ? (
+        <div className="muted dp-small">
+          Пауза стане доступною тут, коли повний прогін дійде до тестового кроку.
+          Кроки індексації підтримують лише завершення.
+        </div>
+      ) : null}
 
       {stopping ? (
         <div className="dp-op-msg dp-warn">
@@ -235,6 +301,7 @@ export default function FullRunSection({
         {rows.map((entry, index) => {
           const op = opState(ops, entry.key);
           const view = STATUS_VIEW[entry.status] || STATUS_VIEW.pending;
+          const isTest = entry.method === "tests.run" || entry.method === "tests.runExternal";
           return (
             <li key={entry.key} className="dp-step">
               <div className="row dp-step-head">
@@ -256,7 +323,11 @@ export default function FullRunSection({
                     {typeof op.pct === "number" ? `${op.pct}% · ` : ""}
                     {op.msg || "виконується…"}
                   </div>
-                  <StopButton op={op} onCancel={() => fullRun.stop()} />
+                  <StopButton
+                    op={op}
+                    onCancel={() => fullRun.stop()}
+                    label={isTest ? "Завершити" : "Стоп"}
+                  />
                   <CancelNote op={op} />
                 </>
               ) : null}

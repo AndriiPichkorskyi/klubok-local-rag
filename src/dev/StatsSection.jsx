@@ -33,8 +33,8 @@ const LABELS = {
 /** Підпис готовності. «Невідомо» — це теж чесна відповідь, на відміну від нуля. */
 const READY_VIEW = {
   ready: { text: "готова", className: "dp-ok" },
-  partial: { text: "неповна", className: "dp-warn" },
-  missing: { text: "НЕ ГОТОВА", className: "dp-err" },
+  partial: { text: "частково заповнена", className: "dp-warn" },
+  missing: { text: "немає даних", className: "dp-err" },
   unknown: { text: "невідомо", className: "muted" },
 };
 
@@ -70,9 +70,10 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
             <thead>
               <tr>
                 <th>Модель ембедингу</th>
-                <th>Векторизовано програм</th>
-                <th>Векторна база</th>
-                <th>Готовність</th>
+                <th>Програм у базі</th>
+                <th>Векторних чанків</th>
+                <th>Розмір на диску</th>
+                <th>Стан</th>
               </tr>
             </thead>
             <tbody>
@@ -85,9 +86,13 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
                       {model.isCurrent ? <span className="dp-badge">поточна</span> : null}
                     </td>
                     <td className="dp-num">
-                      {model.vectorized === undefined && model.chunks !== undefined
-                        ? `${model.chunks} чанків`
-                        : `${numberOrDash(model.vectorized)} з ${numberOrDash(model.total)}`}
+                      {numberOrDash(model.vectorized)} з {numberOrDash(model.total)}
+                    </td>
+                    <td
+                      className="dp-num"
+                      title={model.sourceTypes ? JSON.stringify(model.sourceTypes) : undefined}
+                    >
+                      {numberOrDash(model.chunks)}
                     </td>
                     <td
                       className={
@@ -100,7 +105,7 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
                       title={model.tablePath || undefined}
                     >
                       {model.tableExists === true
-                        ? `існує${model.tableSize ? ` · ${model.tableSize}` : ""}`
+                        ? `${model.tableSize || "0.00"} МБ`
                         : model.tableExists === false
                           ? "немає"
                           : "невідомо"}
