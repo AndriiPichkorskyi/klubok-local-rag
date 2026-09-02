@@ -300,6 +300,12 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
       config.rag.systemPromptMode = modeObj.systemPrompt;
       config.rag.seed = isRandomSeedMode(modeObj) ? null : modeObj.seed;
       config.rag.temperature = modeObj.temperature;
+      
+      if (modeObj.chatModel) config.ollama.chatModel = modeObj.chatModel;
+      if (modeObj.embedModel) {
+        config.embedModelName = modeObj.embedModel;
+        await db.ensureLanceDbConnected(); // Hot-swap vector DB if embedding model changed
+      }
 
       const modeHashes = new Map();
       hashesByMode.set(mode, modeHashes);

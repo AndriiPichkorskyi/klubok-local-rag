@@ -1,15 +1,9 @@
-/**
- * Показ відповіді. Головна рекомендація виділена, альтернативи — компактним
- * списком (бекенд віддає лише їхні назви, тому подробиць у них немає).
- */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Markdown from "./markdown";
 import WalkthroughLauncher from "../walkthrough/WalkthroughLauncher";
 
-/** Довгу статтю згортаємо, щоб рекомендація не тонула в тексті. */
 const CLAMP_CHARS = 900;
 
-/** Прокручує вибраний елемент у видиму частину вікна. */
 function useScrollIntoView(isSelected) {
   const ref = useRef(null);
   useEffect(() => {
@@ -20,11 +14,69 @@ function useScrollIntoView(isSelected) {
   return ref;
 }
 
-/** Головна рекомендація: назва програми, чому саме вона, кроки з довідки. */
-function MainCard({ answer, selected, onSelect, stepsOpen, onToggleSteps, askedText }) {
+/** 
+ * Єдиний компонент для відображення програми (як головної, так і альтернативних).
+ * Якщо isMain=true, він показує причину від LLM та кнопки дій.
+ * Якщо isAccordion=true (для альтернатив), він може згортатися/розгортатися.
+ */
+
+function AppCard({
+  appName,
+  isMain,
+  reason,
+  docs = [],
+  selected,
+  onSelect,
+  askedText,
+  onAskAbout
+}) {
   const ref = useScrollIntoView(selected);
-  const longSteps = answer.steps.length > CLAMP_CHARS;
-  const clamped = longSteps && !stepsOpen;
+  const firstDocTitle = docs?.[0]?.title || "";
+  const [stepsOpen, setStepsOpen] = useState(false);
+
+  const renderDocs = () => {
+    if (!docs || docs.length === 0) {
+      return (
+        <span className="sp-note" style={{ display: 'block', marginBottom: '16px' }}>
+          Ця програма згадується у контексті, але повної статті немає.
+        </span>
+      );
+    }
+
+    return (
+      <div className="sp-steps">
+        {docs.map((doc, idx) => {
+          const isClamped = doc.content.length > CLAMP_CHARS && !stepsOpen;
+          return (
+            <div 
+              key={idx} 
+              className="sp-doc-block"
+              style={{
+                marginTop: idx > 0 ? '16px' : '0', 
+                borderTop: idx > 0 ? '1px solid var(--line)' : 'none', 
+                paddingTop: idx > 0 ? '16px' : '0',
+              }}
+            >
+              <div className="sp-doc-title">
+                З довідки: {doc.title}
+              </div>
+              <div className={isClamped ? "sp-steps-body is-clamped" : "sp-steps-body"}>
+                <Markdown className="sp-md" text={doc.content} />
+              </div>
+            </div>
+          );
+        })}
+        
+        {docs.some(doc => doc.content.length > CLAMP_CHARS) ? (
+          <div className="sp-progress-actions">
+            <button type="button" onClick={() => setStepsOpen(!stepsOpen)}>
+              {stepsOpen ? "Згорнути статті" : "Показати статті повністю"}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <article
@@ -32,78 +84,35 @@ function MainCard({ answer, selected, onSelect, stepsOpen, onToggleSteps, askedT
       className="sp-card"
       data-selected={selected ? "true" : "false"}
       onClick={onSelect}
+      style={!isMain ? { marginTop: '16px' } : {}}
     >
-      <span className="sp-label">Найкраще підходить</span>
-      <h2 className="sp-app-name">{answer.appName}</h2>
+      {isMain ? (
+        <span className="sp-label">Найкраще підходить</span>
+      ) : (
+        <span className="sp-label" style={{background: 'var(--line)', color: 'var(--text-muted)'}}>Також згадується</span>
+      )}
+      
+      <h2 className="sp-app-name">{appName}</h2>
 
-      {answer.reason ? <Markdown className="sp-reason sp-md" text={answer.reason} /> : null}
+      {isMain && reason ? <Markdown className="sp-reason sp-md" text={reason} /> : null}
 
-      {answer.steps ? (
-        <div className="sp-steps">
-          <div className="sp-doc-title">
-            {answer.docTitle ? `З довідки: ${answer.docTitle}` : "З довідки програми"}
-          </div>
-          <div className={clamped ? "sp-steps-body is-clamped" : "sp-steps-body"}>
-            <Markdown className="sp-md" text={answer.steps} />
-          </div>
-          {longSteps ? (
-            <div className="sp-progress-actions">
-              <button type="button" onClick={onToggleSteps}>
-                {stepsOpen ? "Згорнути статтю" : "Показати статтю повністю"}
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
+      {renderDocs()}
 
-      {/* Вхід у модуль 2.5: читати статтю і робити те саме в чужому інтерфейсі —
-          різні речі, тому запуск підказки стоїть одразу під статтею.
-          Клік по кнопці не має рахуватись вибором картки. */}
-      <div onClick={(event) => event.stopPropagation()}>
+      <div onClick={(event) => event.stopPropagation()} style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
         <WalkthroughLauncher
-          appName={answer.appName}
-          docTitle={answer.docTitle}
+          appName={appName}
+          docTitle={firstDocTitle}
           askedText={askedText}
         />
+        {!isMain && (
+           <button type="button" className="sp-alt-btn" style={{border: '1px solid var(--line)', background: 'transparent', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer'}} onClick={() => onAskAbout(appName)}>
+             Перепитати про «{appName}»
+           </button>
+        )}
       </div>
     </article>
   );
 }
-
-/** Один рядок списку альтернатив. */
-function AlternativeRow({ name, selected, open, onSelect, onToggle, onAskAbout }) {
-  const ref = useScrollIntoView(selected);
-
-  return (
-    <li ref={ref} className="sp-alt" data-selected={selected ? "true" : "false"}>
-      <button
-        type="button"
-        className="sp-alt-head"
-        aria-expanded={open}
-        onClick={() => {
-          onSelect();
-          onToggle();
-        }}
-      >
-        <span className="sp-alt-caret">{open ? "▾" : "▸"}</span>
-        <span>{name}</span>
-      </button>
-      {open ? (
-        <div className="sp-alt-body">
-          <span className="sp-note">
-            Ця програма теж згадується в знайденій документації, але покрокової інструкції
-            саме для неї у відповіді немає.
-          </span>
-          <button type="button" onClick={() => onAskAbout(name)}>
-            Перепитати про «{name}»
-          </button>
-        </div>
-      ) : null}
-    </li>
-  );
-}
-
-/** Нічого не знайшлось або запит незрозумілий. Найкращий з поганих збігів не видаємо за відповідь. */
 function EmptyResult({ answer, invalid }) {
   return (
     <section className="sp-empty">
@@ -126,7 +135,6 @@ function EmptyResult({ answer, invalid }) {
   );
 }
 
-/** Відповідь є, але движок не зіставив її з конкретною програмою. */
 function UncertainResult({ answer }) {
   return (
     <section className="sp-empty">
@@ -152,8 +160,6 @@ export default function ResultView({
   openAlts,
   onToggleAlt,
   onAskAbout,
-  // Текст запиту людини. Spotlight його поки не передає — тоді метою сесії
-  // стає назва знайденої статті (див. buildGoal у WalkthroughLauncher).
   askedText = "",
 }) {
   if (!answer) return null;
@@ -175,12 +181,13 @@ export default function ResultView({
 
   return (
     <div className="sp-result">
-      <MainCard
-        answer={answer}
+      <AppCard
+        isMain={true}
+        appName={answer.appName}
+        reason={answer.reason}
+        docs={answer.mainDocuments}
         selected={selectedIndex === 0}
         onSelect={() => onSelect(0)}
-        stepsOpen={stepsOpen}
-        onToggleSteps={onToggleSteps}
         askedText={askedText}
       />
 
@@ -189,14 +196,15 @@ export default function ResultView({
           <div className="sp-alts-title">Інші програми, що згадувалися у знайденій документації</div>
           <ul className="sp-alts-list">
             {answer.alternatives.map((name, i) => (
-              <AlternativeRow
+              <AppCard
                 key={name}
-                name={name}
+                isMain={false}
+                appName={name}
+                docs={answer.alternativeDocs.filter(d => d.appName === name)}
                 selected={selectedIndex === i + 1}
-                open={openAlts.has(name)}
                 onSelect={() => onSelect(i + 1)}
-                onToggle={() => onToggleAlt(name)}
                 onAskAbout={onAskAbout}
+                askedText={askedText}
               />
             ))}
           </ul>

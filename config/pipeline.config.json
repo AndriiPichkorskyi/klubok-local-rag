@@ -43,6 +43,7 @@
     "enableXmlTags": true,
     "enableContextReordering": true,
     "enableJsonFormat": true,
+    "includeAppIntents": true,
     "systemPromptMode": "system",
     "_systemPromptMode_варіанти": [
       "system",
@@ -81,6 +82,12 @@
         ],
         "temperature": [
           0.1
+        ],
+        "chatModel": [
+          "qwen3:1.7b"
+        ],
+        "embedModel": [
+          "qwen3-embedding:4b"
         ]
       },
       "_axes_варіанти": {

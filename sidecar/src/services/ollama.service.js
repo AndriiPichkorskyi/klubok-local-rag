@@ -195,9 +195,9 @@ class OllamaService {
         // Скидаємо штрафи, які можуть бути "зашиті" в Modelfile цієї моделі.
         // Високий presence_penalty (як 1.5 у логах) штрафує символ `{`,
         // через що граматика вимушено генерує безкінечні пробіли замість JSON.
-        presence_penalty: 0.0,
-        frequency_penalty: 0.0,
-        repeat_penalty: 1.0,
+        // presence_penalty: 0.0,
+        // frequency_penalty: 0.0,
+        // repeat_penalty: 1.0,
       },
     };
 

@@ -147,18 +147,31 @@ export async function processQuery(
   const seenDocIds = new Set();
 
   for (const chunk of relevantChunks) {
-    // Якщо це унікальний документ (і не метадані docId: 0)
     if (!seenDocIds.has(chunk.docId) && chunk.docId !== 0 && chunk.docId !== undefined) {
       seenDocIds.add(chunk.docId);
-      const fullDoc = await db.getWebDocumentById(chunk.docId);
-      if (fullDoc && fullDoc.content) {
+      
+      let docTitle = chunk.docTitle || "Довідка";
+      let docContent = null;
+
+      if (chunk.docId === -1 && config.rag.includeAppIntents) {
+        docTitle = "Базовий опис та ключові слова";
+        docContent = chunk.text;
+      } else {
+        const fullDoc = await db.getWebDocumentById(chunk.docId);
+        if (fullDoc && fullDoc.content) {
+          docContent = fullDoc.content;
+        }
+      }
+
+      if (docContent) {
         parentDocuments.push({
           appName: chunk.appName,
-          title: chunk.docTitle || "Довідка",
-          content: fullDoc.content,
+          title: docTitle,
+          content: docContent,
           originalChunkText: chunk.text,
         });
       }
+      
       // Обмежуємо до топ-3 повних статей (щоб не переповнити LLM контекст)
       if (parentDocuments.length >= 3) break;
     }
@@ -254,7 +267,7 @@ export async function processQuery(
       if (parsed.isMatch && parsed.sourceId > 0 && parsed.sourceId <= parentDocuments.length) {
         const sourceDoc = parentDocuments[parsed.sourceId - 1];
         recommendedApp = sourceDoc.appName;
-        responseText = `**${recommendedApp}**\n\n${parsed.reason}\n\n**📄 Повна стаття довідки (${sourceDoc.appName} - ${sourceDoc.title}):**\n\n${sourceDoc.content.trim()}`;
+        responseText = parsed.reason;
       } else {
         if (parsed.reason === "INVALID_QUERY") {
           responseText = "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.";
@@ -279,8 +292,6 @@ export async function processQuery(
         const sourceDoc = parentDocuments[sourceId - 1];
         recommendedApp = sourceDoc.appName;
         responseText = responseText.replace(sourceMatch[0], "").trim();
-        responseText = `**${recommendedApp}**\n\n` + responseText;
-        responseText += `\n\n**📄 Повна стаття довідки (${sourceDoc.appName} - ${sourceDoc.title}):**\n\n${sourceDoc.content.trim()}`;
       }
     }
 
@@ -314,6 +325,7 @@ export async function processQuery(
     recommendedApp: finalApp,
     alternativeApps,
     contextApps: uniqueApps,
+    contextDocuments: parentDocuments,
     executionTimeMs,
     ollamaMetrics: ollamaResult,
     retrievalStats

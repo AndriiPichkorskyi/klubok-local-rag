@@ -212,6 +212,12 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
       // задачами). У самому конфізі на час такого режиму лишається null.
       config.rag.seed = isRandomSeedMode(modeObj) ? null : modeObj.seed;
       config.rag.temperature = modeObj.temperature;
+      
+      if (modeObj.chatModel) config.ollama.chatModel = modeObj.chatModel;
+      if (modeObj.embedModel) {
+        config.embedModelName = modeObj.embedModel;
+        await db.ensureLanceDbConnected(); // Hot-swap vector DB if embedding model changed
+      }
 
       const modeHashes = new Map();
       hashesByMode.set(mode, modeHashes);
