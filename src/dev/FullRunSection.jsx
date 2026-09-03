@@ -10,7 +10,6 @@
  */
 import { useMemo, useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import Section from "./Section";
 import { ProgressBar, StopButton, CancelNote, TestPauseControls } from "./OpButton";
 import { opState } from "./useDevRuntime";
@@ -18,6 +17,7 @@ import { useFullRun } from "./useFullRun";
 import { buildPlan, defaultSelection, describeStepResult, testsFailed, PIPELINE_STEPS, TEST_STEPS } from "./fullRunPlan";
 import { formatExecutionTime } from "./format";
 import BenchmarkAxesForm from "./BenchmarkAxesForm";
+import { formatLiveMetrics } from "./systemMetrics";
 
 /** Підпис і колір кожного стану кроку. Зупинка і помилка — навмисно різні. */
 const STATUS_VIEW = {
@@ -27,12 +27,6 @@ const STATUS_VIEW = {
   error: { text: "помилка", className: "dp-err" },
   cancelled: { text: "зупинено", className: "dp-warn" },
   skipped: { text: "не виконувався", className: "muted" },
-};
-
-const RUN_STATE_VIEW = {
-  done: { text: "Прогін завершено: усі кроки виконано", className: "dp-ok" },
-  failed: { text: "Прогін зупинено помилкою", className: "dp-err" },
-  cancelled: { text: "Прогін зупинено користувачем", className: "dp-warn" },
 };
 
 /** Українська множина: 1 крок, 2 кроки, 5 кроків. */
@@ -98,14 +92,6 @@ export default function FullRunSection({
     if (!running) setConcurrency(Math.max(1, Number(testConcurrency) || 1));
   }, [running, testConcurrency]);
 
-  useEffect(() => {
-    if (running) {
-      invoke("start_metrics").catch(console.error);
-    } else {
-      invoke("stop_metrics").catch(console.error);
-    }
-  }, [running]);
-
   // Осі бенчмарку їдуть у кроки tests.* параметром: те, що людина бачить у
   // формі, і те, чим піде прогін, — один і той самий об'єкт.
   const plan = useMemo(
@@ -152,13 +138,12 @@ export default function FullRunSection({
     );
 
   const rows = running || state !== "idle" ? entries : plan.map((step) => ({ ...step, status: "pending" }));
-  const runView = RUN_STATE_VIEW[state];
   const doneCount = entries.filter((entry) => entry.status === "done").length;
 
   return (
     <Section
       title="Повний прогін (пайплайн + тести)"
-      hint={metrics && running ? `Виконання... Ollama RAM: ${metrics.ram_mb.toFixed(0)} MB | Energy Score: ${metrics.power_score.toFixed(1)}` : "кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"}
+      hint={metrics && running ? `Виконання... ${formatLiveMetrics(metrics)}` : "кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"}
     >
       <div className="dp-check-group">
         <span className="muted dp-small">Кроки пайплайна:</span>
@@ -365,10 +350,6 @@ export default function FullRunSection({
       {/* Підсумок прогону — те, що людина читає зранку. */}
       {state !== "idle" && !running ? (
         <div className="dp-summary">
-          <div className={`dp-summary-head ${runView?.className || ""}`}>
-            {runView?.text || "Прогін"} · загальний час {formatExecutionTime(totalMs)}
-          </div>
-
           <div className="dp-scroll-x">
             <table className="dp-table">
               <thead>

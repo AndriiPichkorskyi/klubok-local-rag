@@ -41,6 +41,9 @@ export function buildConfig() {
 
   const configObj = {
     embedModelName: embedModel,
+    embedModels: [
+      ...new Set([embedModel, ...(Array.isArray(file.embedModels) ? file.embedModels : [])]),
+    ],
     db: {
       sqlitePath: path.join(SIDECAR_DIR, "rag_metadata.sqlite"),
       get lancedbPath() {

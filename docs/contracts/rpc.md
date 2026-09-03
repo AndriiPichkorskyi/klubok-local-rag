@@ -50,8 +50,8 @@ WebSocket, `ws://127.0.0.1:<config.rpc.port>` (за замовчуванням 1
 | `db.stats` | — | статистика бази + готовність кожної моделі (див. нижче) |
 | `db.clear` | `{target}` | `target`: all/web/local/apps/document_links/raw_html/web_documents/lancedb/intents |
 | `db.unlock` | `{force?}` | примусово зняти файл-замок (див. «Замок на операції запису») |
-| `tests.run` | `{axes?, concurrency?}` | `runRagTests(onProgress, {axes, control})` |
-| `tests.runExternal` | `{axes?, concurrency?}` | `runExternalTests(onProgress, {axes, control})` |
+| `tests.run` | `{axes?, concurrency?, overrideChatModel?, overrideEmbedModel?}` | `runRagTests(onProgress, {axes, control, overrideChatModel, overrideEmbedModel})` |
+| `tests.runExternal` | `{axes?, concurrency?, overrideChatModel?, overrideEmbedModel?}` | `runExternalTests(onProgress, {axes, control, overrideChatModel, overrideEmbedModel})` |
 | `tests.pause` | `{id}` | ставить активний `tests.run*` на паузу після завершення вже запущених кейсів |
 | `tests.resume` | `{id, concurrency?}` | продовжує паузу; може змінити паралельність, напр. на `1` |
 | `tests.plan` | `{kind?, axes?}` | ціна прогону ДО запуску (нічого не запускає) |

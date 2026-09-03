@@ -19,8 +19,7 @@ export function renderReportTable(reportData) {
   // не змінився.
   const modeNames = Object.keys(reportData.modes || {});
   const MODE_COL = Math.max(25, ...modeNames.map((name) => name.length + 2));
-  // Решта колонок: 16 + 18 + 18 + 12 + 8 (RAM) — стільки ж, скільки було.
-  const RULE = MODE_COL + 90;
+  const RULE = MODE_COL + 138;
 
   console.log("\n" + "=".repeat(RULE + 5));
   console.log(pc.bold(`📊 ПІДСУМКОВЕ ПОРІВНЯННЯ РЕЖИМІВ (SEARCH MODES):`));
@@ -35,7 +34,10 @@ export function renderReportTable(reportData) {
       pc.bold("In/Out Токени".padEnd(18)) +
       pc.bold("Швидкість".padEnd(12)) +
       pc.bold("Ollama RAM".padEnd(12)) +
-      pc.bold("Energy"),
+      pc.bold("GPU сер/макс".padEnd(16)) +
+      pc.bold("GPU пам'ять".padEnd(14)) +
+      pc.bold("Зрізів".padEnd(9)) +
+      pc.bold("Energy Impact"),
   );
   console.log("-".repeat(RULE));
 
@@ -60,8 +62,17 @@ export function renderReportTable(reportData) {
     else if (s.passRate >= 50) passRateStr = pc.yellow(passRateText);
     else passRateStr = pc.red(passRateText);
 
-    const ramText = s.avgSysRam ? `${Math.round(s.avgSysRam)} MB` : "-";
-    const powerText = s.avgSysPower ? s.avgSysPower.toFixed(1) : "-";
+    const ramText = Number.isFinite(s.avgSysRam) ? `${Math.round(s.avgSysRam)} MB` : "-";
+    const gpuText = Number.isFinite(s.avgSysGpuPercent)
+      ? `${s.avgSysGpuPercent.toFixed(1)}%/${Number.isFinite(s.maxSysGpuPercent) ? s.maxSysGpuPercent.toFixed(0) : "-"}%`
+      : "-";
+    const gpuMemoryText = Number.isFinite(s.avgSysGpuMemoryMB)
+      ? `${Math.round(s.avgSysGpuMemoryMB)} MB`
+      : "-";
+    const sampleText = Number.isFinite(s.sysMetricsSamples) ? String(s.sysMetricsSamples) : "-";
+    const powerText = reportData.metrics && Number.isFinite(s.avgSysPower)
+      ? s.avgSysPower.toFixed(1)
+      : "-";
 
     console.log(
       mode.padEnd(MODE_COL) +
@@ -70,6 +81,9 @@ export function renderReportTable(reportData) {
         `${s.totalInputTokens} / ${s.totalOutputTokens}`.padEnd(18) +
         `${s.avgTps?.toFixed(1) || "-"} t/s`.padEnd(12) +
         ramText.padEnd(12) +
+        gpuText.padEnd(16) +
+        gpuMemoryText.padEnd(14) +
+        sampleText.padEnd(9) +
         powerText,
     );
   }

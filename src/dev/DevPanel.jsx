@@ -16,6 +16,7 @@
  *      обраний звіт, завантажена статистика — не губиться при переході.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useDevRuntime } from "./useDevRuntime";
 import { useBenchmarkAxes } from "./useBenchmarkAxes";
 import { Splitter, useSplitter } from "./Splitter";
@@ -26,13 +27,9 @@ import PipelineSection from "./PipelineSection";
 import FullRunSection from "./FullRunSection";
 import StatsSection from "./StatsSection";
 import ClearSection from "./ClearSection";
-import TestsSection from "./TestsSection";
 import ReportsSection from "./ReportsSection";
 import ConfigSection from "./ConfigSection";
 import "./dev.css";
-
-/** Резерв на випадок, якщо конфіг ще не приїхав або в ньому немає списку моделей. */
-const FALLBACK_EMBED_MODELS = ["qwen3-embedding:0.6b", "qwen3-embedding:4b"];
 
 /**
  * Вкладки згруповані за причиною, з якої панель відкривають, а не за технічним
@@ -95,15 +92,9 @@ function readStoredTab() {
   return TABS[0].id;
 }
 
-/** Моделі ембедингу з конфіга та Ollama */
-function embedModelsOf(config, allModels = []) {
-  const declared = [
-    ...(config?.bootstrap?.requiredModels || []),
-    ...(config?.bootstrap?.optionalModels || []),
-    ...allModels,
-  ].filter((model) => model.includes("embed") || model.includes("bge"));
-
-  const list = [...new Set(declared.length > 0 ? declared : FALLBACK_EMBED_MODELS)];
+/** Моделі ембедингу з єдиного конфіга. */
+function embedModelsOf(config) {
+  const list = [...new Set(config?.embedModels || [])];
   const current = config?.embedModelName;
   return current && !list.includes(current) ? [current, ...list] : list;
 }
@@ -125,6 +116,15 @@ export default function DevPanel() {
   const [reportsRefresh, setReportsRefresh] = useState(0);
   const [statsRefresh, setStatsRefresh] = useState(0);
   const [activeTab, setActiveTab] = useState(readStoredTab);
+
+  // Один власник системного монітора на всю панель. Окремі секції змонтовані
+  // одночасно, тому їхні start/stop змагалися й могли вимкнути метрики посеред прогону.
+  useEffect(() => {
+    invoke("start_metrics").catch(console.error);
+    return () => {
+      invoke("stop_metrics").catch(console.error);
+    };
+  }, []);
 
   // Колонка секцій прокручується спільно для всіх вкладок, тому положення
   // скролу запам'ятовуємо окремо для кожної: інакше повернення на вкладку
@@ -184,17 +184,15 @@ export default function DevPanel() {
     });
   }, []);
 
-  const embedModels = useMemo(() => embedModelsOf(config, allModels), [config, allModels]);
+  const embedModels = useMemo(() => embedModelsOf(config), [config]);
   const chatModels = useMemo(() => {
     const list = allModels.filter(m => !m.includes("embed") && !m.includes("bge") && !m.includes("vision") && !m.includes("vl") && !m.includes("llava"));
     return [...new Set(list.length > 0 ? list : allModels)];
   }, [allModels]);
 
   // Осі бенчмарку живуть на рівні панелі: форма стоїть у секції прогону, а
-  // кнопки в «Тестуванні» запускають рівно ту саму матрицю. Два незалежні
-  // стани тут означали б, що кнопка запускає не те, що показано поруч.
+  // повний прогін запускає рівно ту матрицю, яку людина бачить у формі.
   const benchmark = useBenchmarkAxes();
-  const onTestsFinished = useCallback(() => setReportsRefresh((value) => value + 1), []);
 
   // Після повного прогону оновлюємо і список звітів, і статистику: саме там
   // видно, чи справді векторизувалась кожна модель.
@@ -260,16 +258,6 @@ export default function DevPanel() {
             "results",
             <>
               <StatsSection ops={ops} run={run} cancelOp={cancelOp} refreshKey={statsRefresh} />
-              <TestsSection
-                ops={ops}
-                run={run}
-                cancelOp={cancelOp}
-                pauseOp={pauseOp}
-                resumeOp={resumeOp}
-                testConcurrency={config?.rag?.testConcurrency || 1}
-                benchmark={benchmark}
-                onFinished={onTestsFinished}
-              />
               <ReportsSection ops={ops} run={run} cancelOp={cancelOp} refreshKey={reportsRefresh} />
             </>,
           )}

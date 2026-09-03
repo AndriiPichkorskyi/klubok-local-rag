@@ -40,9 +40,8 @@ export default function ConfigSection({ ops, run, cancelOp, config }) {
   }, [run]);
 
   const embedModels = useMemo(() => {
-    const filtered = allModels.filter(m => m.includes("embed") || m.includes("bge"));
-    return filtered.length > 0 ? filtered : allModels;
-  }, [allModels]);
+    return [...new Set([config?.embedModelName, ...(config?.embedModels || [])].filter(Boolean))];
+  }, [config]);
 
   const visionModels = useMemo(() => {
     const filtered = allModels.filter(m => m.includes("vl") || m.includes("vision") || m.includes("llava"));

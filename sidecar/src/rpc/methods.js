@@ -15,7 +15,7 @@ import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
 import { config, reloadConfig, updateModels } from "../config/config.js";
-import { db } from "../services/db.service.js";
+import { db, vectorizedColumnFor } from "../services/db.service.js";
 import { check as bootstrapCheck, pullModel as bootstrapPullModel } from "../bootstrap/index.js";
 import { processQuery } from "../modules/rag/engine.js";
 import {
@@ -302,8 +302,8 @@ export const methods = {
   async "config.updateModels"(params) {
     const { embedModel, chatModel, visionModel } = params;
     if (embedModel) {
-      // Ensure the vector column exists BEFORE saving config and using the model
-      const colName = `vectorized_${embedModel.replace(/:/g, "_").toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      // Колонку створює те саме правило, яке читає пайплайн.
+      const colName = vectorizedColumnFor(embedModel);
       await db.addColumnIfMissing("apps", `${colName} BOOLEAN DEFAULT 0`);
     }
     const newConfig = updateModels({ embedModel, chatModel, visionModel });
@@ -418,6 +418,8 @@ export const methods = {
       axes: params.axes ?? null,
       signal: ctx.signal,
       control,
+      overrideChatModel: params.overrideChatModel,
+      overrideEmbedModel: params.overrideEmbedModel,
     });
   },
 
@@ -430,6 +432,8 @@ export const methods = {
       axes: params.axes ?? null,
       signal: ctx.signal,
       control,
+      overrideChatModel: params.overrideChatModel,
+      overrideEmbedModel: params.overrideEmbedModel,
     });
   },
 

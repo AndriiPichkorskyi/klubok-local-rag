@@ -60,7 +60,8 @@ export const EXTERNAL_TEST_CASES = [
   },
   {
     query: "Write and format a business letter",
-    expectedApp: ["Pages", "TextEdit"],
+    // `letter` може означати і діловий документ, і відформатований е-лист.
+    expectedApp: ["Pages", "TextEdit", "Mail"],
     type: "valid",
     language: "en",
   },
@@ -190,7 +191,8 @@ export const EXTERNAL_TEST_CASES = [
   },
   {
     query: "Import pictures from my camera",
-    expectedApp: ["Photos", "Image Capture"],
+    // У довідці Preview є окрема стаття «Імпортування зображень із камери».
+    expectedApp: ["Photos", "Image Capture", "Preview"],
     type: "valid",
     language: "en",
   },

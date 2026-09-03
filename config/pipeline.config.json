@@ -1,14 +1,18 @@
 {
   "_опис": "Єдиний конфіг усього проєкта. Читається sidecar/src/config/config.js та Rust-частиною. Змінюйте тут, а не в коді.",
   "embedModelName": "qwen3-embedding:4b",
-  "_embedModelName_варіанти": ["qwen3-embedding:0.6b", "qwen3-embedding:4b"],
+  "embedModels": [
+    "qwen3-embedding:0.6b",
+    "qwen3-embedding:4b",
+    "nomic-embed-text:latest"
+  ],
   "rpc": {
     "host": "127.0.0.1",
     "port": 17817,
     "token": "dev-local-token-change-me",
     "_коментар": "WebSocket-канал між Tauri та sidecar. Слухає лише localhost.",
-    "requestTimeoutSec": 7200,
-    "_requestTimeoutSec_коментар": "Ліміт очікування однієї відповіді. Повна векторизація може тривати години."
+    "requestTimeoutSec": 86400,
+    "_requestTimeoutSec_коментар": "Ліміт очікування однієї відповіді. 24 години потрібні для нічних матричних тестів; розрив з'єднання завершує очікування одразу."
   },
   "logging": {
     "enabled": false,

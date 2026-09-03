@@ -30,6 +30,11 @@ function runProcess(scriptPath, envModel) {
   });
 }
 
+/** Моделі ембедингу з конфіга без зашитих у CLI назв. */
+function configuredEmbedModels() {
+  return [...new Set([config.embedModelName, ...(config.embedModels || [])].filter(Boolean))];
+}
+
 
 import {
   runScanApps,
@@ -140,8 +145,8 @@ async function handleUpdateMenu() {
     message: "Оновлення бази. Оберіть дію:",
     options: [
       {
-        value: "full_sync_test_both",
-        label: "🌓 Повне оновлення (0.6b і 4b) + 🤖 Тестування (Обидва)",
+        value: "full_sync_test_all",
+        label: `🌓 Повне оновлення всіх моделей (${configuredEmbedModels().join(", ")}) + 🤖 Тестування`,
       },
       {
         value: "full_sync_test",
@@ -163,9 +168,9 @@ async function handleUpdateMenu() {
   if (p.isCancel(updateAction) || updateAction === "back") return;
 
   switch (updateAction) {
-    case "full_sync_test_both":
+    case "full_sync_test_all":
       await withSound(async () => {
-        await handleFullSyncBoth();
+        await handleFullSyncAll();
 
         // Після оновлення запускаємо тести для обох
         const __filename = fileURLToPath(import.meta.url);
@@ -208,12 +213,12 @@ async function handleUpdateMenu() {
 }
 
 async function handleTest() {
+  const models = configuredEmbedModels();
   const modelChoice = await p.select({
     message: "Оберіть модель для тестування (RAG Benchmark):",
     options: [
-      { value: "both", label: "Обидва (Послідовний запуск 0.6b та 4b)" },
-      { value: "qwen3-embedding:0.6b", label: "Тільки Модель 0.6b" },
-      { value: "qwen3-embedding:4b", label: "Тільки Модель 4b" },
+      { value: "all", label: `Усі з конфіга (${models.join(", ")})` },
+      ...models.map((model) => ({ value: model, label: model })),
       { value: "back", label: "🔙 Повернутися назад" },
     ],
   });
@@ -227,7 +232,7 @@ async function handleTest() {
 
   console.clear();
 
-  if (modelChoice === "both") {
+  if (modelChoice === "all") {
     const script = path.join(__dirname, "..", "tests", "run-all-tests.js");
     await runProcess(script, null);
   } else {
@@ -242,9 +247,9 @@ async function handleTest() {
 async function handleExternalTest() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  console.log(pc.bgBlue(pc.white(`🚀 ЗАПУСК EXTERNAL ТЕСТІВ (Hybrid + XML + Reorder | Модель 4b) `)));
+  console.log(pc.bgBlue(pc.white(`🚀 ЗАПУСК EXTERNAL ТЕСТІВ (Hybrid + XML + Reorder | ${config.embedModelName}) `)));
   const script = path.join(__dirname, "..", "tests", "test-external.js");
-  await runProcess(script, "qwen3-embedding:4b");
+  await runProcess(script, config.embedModelName);
   p.log.success("External тестування завершено.");
 }
 
@@ -339,29 +344,26 @@ async function handleFullSync() {
   p.log.success(pc.green("✅ Повне оновлення бази успішно завершено!"));
 }
 
-async function handleFullSyncBoth() {
+async function handleFullSyncAll() {
+  const models = configuredEmbedModels();
   p.note(
-    "Запуск повного циклу оновлення та векторизації для ОБОХ моделей (0.6b та 4b).",
-    "🚀 Повне оновлення (Обидва)",
+    `Запуск повного циклу оновлення та векторизації для моделей: ${models.join(", ")}.`,
+    "🚀 Повне оновлення (усі моделі)",
   );
   await handleScan();
   await handleFetch();
   await handleKeywords();
 
-  // Векторизація 0.6b
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   const vectorizeScript = path.join(__dirname, "run-vectorize.js");
 
+  for (const model of models) {
+    console.log(pc.bgBlue(pc.white(` 🔄 ВЕКТОРИЗАЦІЯ ДЛЯ ${model} `)));
+    await runProcess(vectorizeScript, model);
+  }
 
-
-  console.log(pc.bgBlue(pc.white(" 🔄 ВЕКТОРИЗАЦІЯ ДЛЯ 0.6b ")));
-  await runProcess(vectorizeScript, "qwen3-embedding:0.6b");
-
-  console.log(pc.bgBlue(pc.white(" 🔄 ВЕКТОРИЗАЦІЯ ДЛЯ 4b ")));
-  await runProcess(vectorizeScript, "qwen3-embedding:4b");
-
-  p.log.success(pc.green("✅ Повне оновлення бази для обох моделей успішно завершено!"));
+  p.log.success(pc.green("✅ Повне оновлення бази для всіх моделей успішно завершено!"));
 }
 
 async function handleScan() {

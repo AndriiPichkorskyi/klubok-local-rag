@@ -100,6 +100,7 @@ class OllamaService {
       const installedModels = Array.isArray(data?.models)
         ? data.models.map((m) => m.name).filter(Boolean)
         : [];
+      const installedModelDetails = Array.isArray(data?.models) ? data.models : [];
 
       const { required } = resolveModelLists();
       const missingModels = required.filter((model) => !isModelInstalled(model, installedModels));
@@ -108,6 +109,7 @@ class OllamaService {
         isAvailable: true,
         missingModels,
         installedModels,
+        installedModelDetails,
         error: null,
       };
     } catch (err) {
@@ -115,6 +117,7 @@ class OllamaService {
         isAvailable: false,
         missingModels: [],
         installedModels: [],
+        installedModelDetails: [],
         error: err.message,
       };
     }

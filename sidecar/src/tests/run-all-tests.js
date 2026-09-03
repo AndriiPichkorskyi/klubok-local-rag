@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import pc from "picocolors";
 import { logger } from "../services/logger.service.js";
+import { config } from "../config/config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -74,11 +75,13 @@ async function runAll() {
   logger.installProcessHandlers({ role: "run-all-tests" });
   logger.logProcessStart({ role: "run-all-tests" });
   try {
-    await runTest("qwen3-embedding:0.6b");
-    console.log("\n=======================================================\n");
-    await runTest("qwen3-embedding:4b");
+    const models = [...new Set(config.embedModels || [config.embedModelName])];
+    for (let index = 0; index < models.length; index++) {
+      if (index > 0) console.log("\n=======================================================\n");
+      await runTest(models[index]);
+    }
 
-    console.log(pc.bgGreen(pc.white("\n 🎉 УСІ ТЕСТИ ДЛЯ ОБОХ МОДЕЛЕЙ ЗАВЕРШЕНО! ")));
+    console.log(pc.bgGreen(pc.white("\n 🎉 ТЕСТИ ДЛЯ ВСІХ МОДЕЛЕЙ ЗАВЕРШЕНО! ")));
   } catch (error) {
     console.error(pc.red("\n❌ Процес тестування був перерваний через помилку."));
     process.exit(1);

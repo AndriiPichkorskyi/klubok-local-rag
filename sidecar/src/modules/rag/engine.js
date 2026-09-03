@@ -174,6 +174,8 @@ export async function processQuery(
         parentDocuments.push({
           appName: chunk.appName,
           title: docTitle,
+          docId: chunk.docId,
+          sourceType: chunk.sourceType || "WEB",
           content: docContent,
           htmlContent: htmlContent || null,
           originalChunkText: chunk.text,
@@ -192,6 +194,8 @@ export async function processQuery(
       parentDocuments.push({
         appName: chunk.appName,
         title: "Базовий опис",
+        docId: chunk.docId,
+        sourceType: chunk.sourceType || "META",
         content: chunk.text,
         originalChunkText: chunk.text,
       });

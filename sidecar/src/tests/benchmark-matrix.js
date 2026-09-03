@@ -58,15 +58,15 @@ export const DEFAULT_AXES = Object.freeze({
   systemPrompt: ["system"],
   seed: [42],
   temperature: [0.1],
-  chatModel: ["qwen3:1.7b"],
-  embedModel: ["qwen3-embedding:4b"],
+  chatModel: [],
+  embedModel: [],
 });
 
 /** Порядок осей у назвах, підрахунках і порівняннях. Один на весь модуль. */
 export const AXIS_NAMES = ["search", "xml", "reorder", "systemPrompt", "seed", "temperature", "chatModel", "embedModel"];
 
 /** Легасі-значення осей: доки вісь стоїть на ньому, її не згадують у назві режиму. */
-const LEGACY_VALUE = {  systemPrompt: "system", seed: 42, temperature: 0.1 , chatModel: "qwen3:1.7b", embedModel: "qwen3-embedding:4b" };
+const LEGACY_VALUE = { systemPrompt: "system", seed: 42, temperature: 0.1 };
 
 /** Верхня межа температури. 2 — стеля api Ollama; більше — майже напевно друкарська помилка. */
 const MAX_TEMPERATURE = 2;

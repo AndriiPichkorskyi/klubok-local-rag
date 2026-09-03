@@ -160,7 +160,12 @@ export async function planBenchmark({ kind = "rag", axes = null } = {}) {
     kind,
     axes: plan.axes,
     // Осі з конфіга окремо: панель показує, що саме успадковано, а що задано руками.
-    configAxes: resolveBenchmarkPlan({ benchmark, overrides: null, caseCount }).axes,
+    configAxes: resolveBenchmarkPlan({
+      benchmark,
+      overrides: null,
+      caseCount,
+      extra: { chatModel: config.ollama.chatModel, embedModel: config.embedModelName },
+    }).axes,
     modeNames: plan.modes.map((mode) => mode.name),
     modeCount: plan.modes.length,
     caseCount,

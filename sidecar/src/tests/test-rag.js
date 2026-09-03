@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
 import pc from "picocolors";
 import { processQuery } from "../modules/rag/engine.js";
@@ -10,6 +11,7 @@ import { renderReportTable } from "../cli/reports.js";
 import { logger } from "../services/logger.service.js";
 import { createReportStream } from "./report-stream.js";
 import { runTestQueue } from "./test-queue.js";
+import { createSystemMetricsSampler } from "./system-metrics.js";
 import {
   resolveBenchmarkPlan,
   assertModeLimit,
@@ -27,6 +29,21 @@ import {
   LANGUAGE_LABELS,
 } from "./language.js";
 import { createHash } from "crypto";
+
+function modelDetails(model, installed) {
+  if (!model || !Array.isArray(installed)) return null;
+  const normalized = model.includes(":") ? model : `${model}:latest`;
+  const found = installed.find((item) => item?.name === model || item?.name === normalized);
+  if (!found) return null;
+  return {
+    name: found.name,
+    sizeBytes: Number.isFinite(found.size) ? found.size : null,
+    digest: found.digest || null,
+    family: found.details?.family || null,
+    parameterSize: found.details?.parameter_size || null,
+    quantizationLevel: found.details?.quantization_level || null,
+  };
+}
 
 /**
  * RAG-бенчмарк по всіх комбінаціях режимів.
@@ -49,44 +66,15 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
   const stageName = benchmarkKind === "external" ? "externalBenchmark" : "ragBenchmark";
   const allowContextMatch = options.allowContextMatch !== false;
 
-  // Override models if requested
+  // Моделі можна перевизначити для одного кроку повного прогону.
   const savedChatModel = config.ollama.chatModel;
   const savedEmbedModel = config.embedModelName;
   if (options.overrideChatModel) config.ollama.chatModel = options.overrideChatModel;
   if (options.overrideEmbedModel) config.embedModelName = options.overrideEmbedModel;
 
-  console.log(pc.bgCyan(pc.black(` ЗАПУСК ${benchmarkLabel.toUpperCase()} `)));
-
-  const status = await ollama.checkAvailability();
-  if (!status.isAvailable) {
-    throw new Error(
-      `Ollama не запущена (${status.error || "немає з'єднання"}) — тести не можуть стартувати.`,
-    );
-  }
-
-  onProgress("Прогрів моделей Ollama...", null);
-  process.stdout.write("🔥 Прогрів моделей Ollama... ");
-  await ollama.warmup();
-  console.log(pc.green("Готово!"));
-
-  // Ініціалізуємо БД перед тестами
-  await db.init();
-
-  // Бенчмарк — найдовша операція в системі, і саме на ній 26.08 зник sidecar.
-  // Тому вмикаємо файловий журнал і зріз пам'яті навіть при термінальному
-  // запуску: якщо процес уб'ють ззовні, у журналі лишиться, на якому режимі
-  // й на якому кейсі це сталося.
-  await logger.init();
-  logger.installProcessHandlers({
-    role: benchmarkKind === "external" ? "test-external" : "test-rag",
-  });
-  logger.startMemoryWatch();
-  // Попередження про пам'ять має дійти до людини ДО падіння — і в журнал,
-  // і в прогрес (у панелі розробника це той самий рядок, що й хід тестів).
-  const unsubscribeMemoryWarning = logger.onMemoryWarning((text) => onProgress(text, null));
-
   /** Потік звіту. Оголошений тут, щоб finally міг закрити його і після збою. */
   let report = null;
+  let unsubscribeMemoryWarning = () => {};
 
   // Режими перемикаються через глобальний config, тож запам'ятовуємо стан
   // і повертаємо його у finally: інакше решта сесії працює з чужими
@@ -100,6 +88,34 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     temperature: config.rag.temperature,
   };
   try {
+    console.log(pc.bgCyan(pc.black(` ЗАПУСК ${benchmarkLabel.toUpperCase()} `)));
+
+    const status = await ollama.checkAvailability();
+    if (!status.isAvailable) {
+      throw new Error(
+        `Ollama не запущена (${status.error || "немає з'єднання"}) — тести не можуть стартувати.`,
+      );
+    }
+
+    onProgress("Прогрів моделей Ollama...", null);
+    process.stdout.write("🔥 Прогрів моделей Ollama... ");
+    await ollama.warmup();
+    console.log(pc.green("Готово!"));
+
+    // Ініціалізуємо БД перед тестами.
+    await db.init();
+
+    // Бенчмарк — найдовша операція в системі, і саме на ній 26.08 зник sidecar.
+    // Журнал і зріз пам'яті працюють лише коли це дозволено єдиним конфігом.
+    await logger.init();
+    logger.installProcessHandlers({
+      role: benchmarkKind === "external" ? "test-external" : "test-rag",
+    });
+    logger.startMemoryWatch();
+    // Попередження про пам'ять має дійти до людини ДО падіння — і в журнал,
+    // і в прогрес (у панелі розробника це той самий рядок, що й хід тестів).
+    unsubscribeMemoryWarning = logger.onMemoryWarning((text) => onProgress(text, null));
+
     // Матриця більше не зашита в код: осі беруться з config/pipeline.config.json
     // (rag.benchmark.axes). Типові значення дають ті самі 12 режимів, що й раніше.
     const benchmarkConfig = config.rag.benchmark || {};
@@ -186,15 +202,42 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
         embed: config.embedModelName,
         chat: config.ollama.chatModel,
       },
+      modelDetails: {
+        embed: modelDetails(config.embedModelName, status.installedModelDetails),
+        chat: modelDetails(config.ollama.chatModel, status.installedModelDetails),
+      },
+      datasetHash: createHash("sha256").update(JSON.stringify(testCases)).digest("hex"),
+      environment: {
+        platform: os.platform(),
+        release: os.release(),
+        arch: os.arch(),
+        cpu: os.cpus()[0]?.model || null,
+        logicalCpus: os.cpus().length,
+        totalMemoryMB: Math.round(os.totalmem() / 1024 / 1024),
+        nodeVersion: process.version,
+      },
       // Нове у звіті: матриця, якою його отримано, і очікуваний масштаб.
       benchmarkKind,
       axes,
       modeCount: modes.length,
       expectedRuns: totalRuns,
+      initialConcurrency:
+        options.control?.snapshot?.().concurrency || Number(config.rag.testConcurrency) || 1,
       defaults: {
         enableJsonFormat: config.rag.enableJsonFormat,
         topK: config.rag.topK,
         excludeLocalDocs: config.rag.excludeLocalDocs,
+      },
+      metrics: {
+        platform: process.platform,
+        gpuSource:
+          process.platform === "darwin" ? "macOS IOAccelerator PerformanceStatistics" : null,
+        gpuScope: "system",
+        gpuMemoryScope: "system unified memory used by GPU",
+        minimumSampleIntervalMs: 1000,
+        unavailableValue: null,
+        concurrencyNote:
+          "GPU-метрики загальносистемні; для порівняння моделей використовуйте один потік і уникайте іншого GPU-навантаження.",
       },
     };
     report = createReportStream(reportPath, reportHeader);
@@ -255,7 +298,15 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
         ttftSum: 0,
         memSum: 0,
         sysRamSum: 0,
+        sysRamCases: 0,
         sysPowerSum: 0,
+        sysPowerCases: 0,
+        sysGpuSum: 0,
+        sysGpuCases: 0,
+        sysGpuMax: null,
+        sysGpuMemorySum: 0,
+        sysGpuMemoryCases: 0,
+        sysMetricSamples: 0,
         inputTokens: 0,
         outputTokens: 0,
       };
@@ -267,11 +318,19 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
           const testIndex = testIndexCounter++;
           // Зерно цього конкретного запиту: значення осі або нове випадкове.
           const caseSeed = nextSeedFor(modeObj);
+          const systemSampler = createSystemMetricsSampler();
+          systemSampler.start();
           const queryStart = Date.now();
-          const result = await processQuery(test.query, () => {}, null, null, {
-            seed: caseSeed,
-            temperature: modeObj.temperature,
-          });
+          let result;
+          let sysMetrics;
+          try {
+            result = await processQuery(test.query, () => {}, null, null, {
+              seed: caseSeed,
+              temperature: modeObj.temperature,
+            });
+          } finally {
+            sysMetrics = await systemSampler.stop();
+          }
           const queryTime = Date.now() - queryStart;
 
           // Збираємо метрики
@@ -290,15 +349,15 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             }
           }
           const memUsageMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
-          let sysMetrics = {};
-          try {
-            const metricsJson = await fs.readFile("/tmp/ollama_metrics.json", "utf8");
-            sysMetrics = JSON.parse(metricsJson);
-          } catch (e) {
-            // Файл може бути заблокований або ще не створений
-          }
 
-          const { response, recommendedApp, rawLlmOutput, retrievalStats } = result;
+          const {
+            response,
+            recommendedApp,
+            rawLlmOutput,
+            retrievalStats,
+            contextApps,
+            contextDocuments,
+          } = result;
 
           console.log(
             `${pc.blue(`[${mode}] Тест ${testIndex + 1}/${testCases.length}:`)} "${test.query}"`,
@@ -365,7 +424,13 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             }
           }
 
-          const metricsStr = `[${(queryTime / 1000).toFixed(1)}c | TTFT: ${ttft > 0 ? ttft.toFixed(2) + "c" : "N/A"} | ${tps > 0 ? tps.toFixed(1) + " t/s" : "N/A"} | Node RAM: ${memUsageMB}MB | Ollama RAM: ${Math.round(sysMetrics.ram_mb || 0)}MB]`;
+          const ollamaRamText = Number.isFinite(sysMetrics.ollamaRamMbAvg)
+            ? `${Math.round(sysMetrics.ollamaRamMbAvg)}MB`
+            : "N/A";
+          const gpuText = Number.isFinite(sysMetrics.gpuPercentAvg)
+            ? `${sysMetrics.gpuPercentAvg.toFixed(1)}% avg / ${sysMetrics.gpuPercentMax.toFixed(0)}% max`
+            : "N/A";
+          const metricsStr = `[${(queryTime / 1000).toFixed(1)}c | TTFT: ${ttft > 0 ? ttft.toFixed(2) + "c" : "N/A"} | ${tps > 0 ? tps.toFixed(1) + " t/s" : "N/A"} | Node RAM: ${memUsageMB}MB | Ollama RAM: ${ollamaRamText} | GPU: ${gpuText}]`;
 
           if (isSuccess) {
             console.log(
@@ -427,12 +492,35 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
             inputTokens,
             outputTokens,
             memoryUsageMB: memUsageMB,
-            sysOllamaRamMB: sysMetrics.ram_mb || 0,
-            sysPowerScore: sysMetrics.power_score || 0,
+            sysOllamaRamMB: sysMetrics.ollamaRamMbAvg,
+            sysPowerScore: sysMetrics.powerScoreAvg,
+            sysGpuPercent: sysMetrics.gpuPercentAvg,
+            sysGpuPercentMax: sysMetrics.gpuPercentMax,
+            sysGpuMemoryMB: sysMetrics.gpuMemoryMbAvg,
+            sysMetricsSamples: sysMetrics.sampleCount,
+            testConcurrency:
+              options.control?.snapshot?.().concurrency || Number(config.rag.testConcurrency) || 1,
             llmResponse: response,
             rawLlmOutput: rawLlmOutput,
             rawOutputHash,
             retrievalStats,
+            contextApps: Array.isArray(contextApps) ? contextApps : [],
+            // Повні статті можуть мати сотні кілобайтів, тому у звіт пишемо
+            // ідентифікатор джерела та фрагмент, який привів пошук до цієї статті.
+            contextDocuments: Array.isArray(contextDocuments)
+              ? contextDocuments.map((doc, index) => ({
+                  sourceId: index + 1,
+                  appName: doc.appName,
+                  title: doc.title,
+                  docId: doc.docId ?? null,
+                  sourceType: doc.sourceType || null,
+                  contentLength: typeof doc.content === "string" ? doc.content.length : 0,
+                  matchedChunk:
+                    typeof doc.originalChunkText === "string"
+                      ? doc.originalChunkText.slice(0, 700)
+                      : "",
+                }))
+              : [],
           };
 
           doneRuns++;
@@ -455,8 +543,26 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
           acc.tpsSum += tps;
           acc.ttftSum += ttft;
           acc.memSum += memUsageMB;
-          acc.sysRamSum += sysMetrics.ram_mb || 0;
-          acc.sysPowerSum += sysMetrics.power_score || 0;
+          if (Number.isFinite(sysMetrics.ollamaRamMbAvg)) {
+            acc.sysRamSum += sysMetrics.ollamaRamMbAvg;
+            acc.sysRamCases += 1;
+          }
+          if (Number.isFinite(sysMetrics.powerScoreAvg)) {
+            acc.sysPowerSum += sysMetrics.powerScoreAvg;
+            acc.sysPowerCases += 1;
+          }
+          if (Number.isFinite(sysMetrics.gpuPercentAvg)) {
+            acc.sysGpuSum += sysMetrics.gpuPercentAvg;
+            acc.sysGpuCases += 1;
+          }
+          if (Number.isFinite(sysMetrics.gpuPercentMax)) {
+            acc.sysGpuMax = Math.max(acc.sysGpuMax ?? -Infinity, sysMetrics.gpuPercentMax);
+          }
+          if (Number.isFinite(sysMetrics.gpuMemoryMbAvg)) {
+            acc.sysGpuMemorySum += sysMetrics.gpuMemoryMbAvg;
+            acc.sysGpuMemoryCases += 1;
+          }
+          acc.sysMetricSamples += sysMetrics.sampleCount;
           acc.inputTokens += inputTokens;
           acc.outputTokens += outputTokens;
           await report.addResult(resObj);
@@ -483,8 +589,13 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
         avgTps: acc.tpsSum / divisor,
         avgTtft: acc.ttftSum / divisor,
         avgMem: acc.memSum / divisor,
-        avgSysRam: acc.sysRamSum / divisor,
-        avgSysPower: acc.sysPowerSum / divisor,
+        avgSysRam: acc.sysRamCases > 0 ? acc.sysRamSum / acc.sysRamCases : null,
+        avgSysPower: acc.sysPowerCases > 0 ? acc.sysPowerSum / acc.sysPowerCases : null,
+        avgSysGpuPercent: acc.sysGpuCases > 0 ? acc.sysGpuSum / acc.sysGpuCases : null,
+        maxSysGpuPercent: acc.sysGpuMax,
+        avgSysGpuMemoryMB:
+          acc.sysGpuMemoryCases > 0 ? acc.sysGpuMemorySum / acc.sysGpuMemoryCases : null,
+        sysMetricsSamples: acc.sysMetricSamples,
         totalInputTokens: acc.inputTokens,
         totalOutputTokens: acc.outputTokens,
         byLanguage: langTally.snapshot(),

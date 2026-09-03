@@ -221,6 +221,152 @@ table.dp-table th { color: var(--muted); font-weight: 600; }
 table.dp-table tr.dp-selected td { background: var(--panel); }
 table.dp-table td.dp-num { text-align: right; font-family: var(--mono); }
 
+.dp-report-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.dp-report-block-title { margin-top: 6px; }
+
+.dp-result-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dp-result-filters button.dp-selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--panel);
+}
+
+table.dp-result-table th,
+table.dp-result-table td {
+  vertical-align: top;
+}
+
+table.dp-result-table td.dp-report-wrap,
+table.dp-result-table td.dp-report-query,
+table.dp-result-table td.dp-report-context {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dp-report-query { min-width: 220px; }
+.dp-report-context { min-width: 220px; max-width: 420px; }
+
+.dp-result-details { min-width: 90px; }
+.dp-result-details summary { cursor: pointer; color: var(--accent); }
+.dp-result-details[open] {
+  min-width: min(620px, 70vw);
+  white-space: normal;
+}
+
+.dp-result-meta {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 4px 8px;
+  margin: 8px 0;
+}
+
+.dp-result-meta dt { color: var(--muted); }
+.dp-result-meta dd { margin: 0; overflow-wrap: anywhere; }
+.dp-result-meta pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.dp-result-docs ol { margin: 6px 0 0; padding-left: 22px; }
+.dp-result-docs li { margin-bottom: 8px; }
+.dp-result-docs .dp-badge { margin-left: 6px; }
+.dp-result-docs blockquote {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  white-space: pre-wrap;
+  max-height: 130px;
+  overflow: auto;
+}
+
+/* Аналітична частина звіту: KPI й готові ECharts-графіки. */
+.dp-report-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.dp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+}
+
+.dp-kpi {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dp-kpi > span,
+.dp-kpi > small { color: var(--muted); }
+.dp-kpi > strong { font-size: 18px; }
+.dp-kpi > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dp-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 10px;
+}
+
+.dp-chart-card {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 10px;
+}
+
+.dp-chart-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px 4px;
+}
+
+.dp-compare-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.dp-report-checkbox {
+  width: auto;
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .dp-chart-grid { grid-template-columns: 1fr; }
+  .dp-chart-title { align-items: flex-start; flex-direction: column; }
+}
+
 .dp-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 12px; }
 .dp-kv dt { color: var(--muted); }
 .dp-kv dd { margin: 0; font-family: var(--mono); word-break: break-all; }

@@ -4,12 +4,12 @@
  */
 import { useState, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { rpc } from "../ipc";
 import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { BenchmarkPlanSummary } from "./BenchmarkAxesForm";
+import { formatLiveMetrics } from "./systemMetrics";
 
 function verdict(result) {
   if (result && typeof result === "object") {
@@ -53,11 +53,6 @@ export default function TestsSection({
     };
   }, []);
   
-  useEffect(() => {
-    invoke("start_metrics").catch(console.error);
-    return () => invoke("stop_metrics").catch(console.error);
-  }, []);
-
   const rag = opState(ops, "tests.run");
   const external = opState(ops, "tests.runExternal");
   const activeTests = [rag, external].filter((op) => op.running);
@@ -91,7 +86,7 @@ export default function TestsSection({
   return (
     <Section 
       title="Тестування" 
-      hint={metrics ? `Ollama RAM: ${metrics.ram_mb.toFixed(0)} MB | Energy Score: ${metrics.power_score.toFixed(1)}` : "Очікування метрик..."}
+      hint={formatLiveMetrics(metrics)}
     >
       <div className="dp-test-controls">
         <label className="row dp-test-concurrency">

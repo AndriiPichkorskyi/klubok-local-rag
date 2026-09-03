@@ -5,7 +5,7 @@ import pLimit from "p-limit";
  *       пошук програм -> завантаження документації -> розбиття на чанки та векторизація.
  */
 
-import { db } from "../../services/db.service.js";
+import { db, vectorizedColumnFor } from "../../services/db.service.js";
 import { ollama } from "../../services/ollama.service.js";
 import { scraper } from "../../services/scraper.service.js";
 import { scanApplications } from "./scanner.js";
@@ -172,9 +172,7 @@ async function runFetchDocsLocked(onProgress, signal = null) {
 
     // Якщо були завантажені нові документи, програму треба перевекторизувати
     if (pendingLinks.length > 0) {
-      await db.sqliteDb.run("UPDATE apps SET vectorized_4b = 0, vectorized_0_6b = 0 WHERE id = ?", [
-        app.id,
-      ]);
+      await db.resetVectorizedFlags([app.id]);
     }
 
     // Прапорці скинуто — тільки тепер вихід з циклу лишає базу узгодженою.
@@ -201,7 +199,8 @@ export async function runVectorize(onProgress, signal = null) {
 }
 
 async function runVectorizeLocked(onProgress, signal = null) {
-  const vecCol = config.embedModelName.includes("4b") ? "vectorized_4b" : "vectorized_0_6b";
+  const vecCol = vectorizedColumnFor(config.embedModelName);
+  await db.addColumnIfMissing("apps", `${vecCol} BOOLEAN DEFAULT 0`);
   // Вибираємо тільки ті програми, які ще не були векторизовані
   const apps = await db.sqliteDb.all(`SELECT * FROM apps WHERE ${vecCol} = 0 OR ${vecCol} IS NULL`);
 
@@ -686,10 +685,7 @@ async function runFetchLocalDocsLocked(onProgress, signal = null) {
           await db.saveWebDocument(linkId, content);
           docsCount++;
           // Якщо зберегли новий документ, програму треба перевекторизувати
-          await db.sqliteDb.run(
-            "UPDATE apps SET vectorized_4b = 0, vectorized_0_6b = 0 WHERE id = ?",
-            [app.id],
-          );
+          await db.resetVectorizedFlags([app.id]);
         }
       } catch (err) {
         // console.error(`Помилка читання ${file}`, err.message);

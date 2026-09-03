@@ -91,7 +91,14 @@ function vectorSteps(models, configModel) {
  * порожньо = бекенд бере матрицю з конфіга, як і було до появи форми осей.
  * Повертає масив {key, method, params, label, warn} у порядку виконання.
  */
-export function buildPlan(selection, models, configModel, testParams = null, chatModels = [], configChatModel = null) {
+export function buildPlan(
+  selection,
+  models,
+  configModel,
+  testParams = null,
+  chatModels = [],
+  configChatModel = null,
+) {
   const steps = selection?.steps || {};
   const tests = selection?.tests || {};
   const plan = [];
@@ -108,16 +115,28 @@ export function buildPlan(selection, models, configModel, testParams = null, cha
   for (const step of TEST_STEPS) {
     if (!tests[step.id]) continue;
     
-    // Якщо вибрані чат-моделі для тестів, створюємо крок для кожної
-    const chosenChat = Array.isArray(chatModels) && chatModels.length > 0 ? chatModels : [configChatModel || "default"];
-    
-    const chosenEmbed = Array.isArray(models) && models.length > 0 ? models : [configModel || "default"];
-    
+    // Якщо вибрані моделі для тестів, створюємо крок для кожної пари.
+    // null означає «не перевизначати»: фактичне значення візьме sidecar із конфіга.
+    const chosenChat = Array.isArray(chatModels) && chatModels.length > 0
+      ? chatModels
+      : [configChatModel || null];
+    const chosenEmbed = Array.isArray(models) && models.length > 0
+      ? models
+      : [configModel || null];
+
     for (const embed of chosenEmbed) {
       for (const chat of chosenChat) {
-        const params = { ...testParams, overrideChatModel: chat, overrideEmbedModel: embed };
-        const label = `${step.label} · ${embed} · ${chat}`;
-        plan.push({ key: `full:${step.id}:${embed}:${chat}`, method: step.method, params, label });
+        const params = { ...testParams };
+        if (chat) params.overrideChatModel = chat;
+        if (embed) params.overrideEmbedModel = embed;
+        const modelLabel = [embed, chat].filter(Boolean).join(" · ");
+        const label = modelLabel ? `${step.label} · ${modelLabel}` : step.label;
+        plan.push({
+          key: `full:${step.id}:${embed || "config"}:${chat || "config"}`,
+          method: step.method,
+          params,
+          label,
+        });
       }
     }
   }

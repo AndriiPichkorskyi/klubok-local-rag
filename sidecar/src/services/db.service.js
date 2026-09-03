@@ -69,16 +69,30 @@ function lockedError(operation, lock) {
 
 /**
  * Ім'я колонки-прапорця векторизації для моделі.
- * Правило те саме, що й у схемі: тег моделі після двокрапки, всі неалфавітні
- * символи — підкреслення ("qwen3-embedding:0.6b" → "vectorized_0_6b").
- * Список моделей ніде не захардкоджений: він приходить із конфіга, а існування
- * колонки перевіряється по реальній схемі таблиці apps.
+ * Беремо повну назву, а не лише тег після двокрапки: інакше дві різні
+ * моделі з тегом `latest` ділили б один прапорець. Назви моделей у логіці немає:
+ * вони приходять із конфіга або Ollama.
  */
 export function vectorizedColumnFor(modelName) {
-  const tag = String(modelName).includes(":")
-    ? String(modelName).split(":").pop()
-    : String(modelName);
-  return `vectorized_${tag.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+  const key = String(modelName || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!key) throw new Error("Не вказано назву моделі ембедингу.");
+  return `vectorized_${key}`;
+}
+
+/** Старе правило потрібне лише для одноразового перенесення наявних прапорців. */
+function legacyVectorizedColumnFor(modelName) {
+  const fullName = String(modelName || "");
+  const tag = fullName.includes(":") ? fullName.split(":").pop() : fullName;
+  const key = tag
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return key ? `vectorized_${key}` : null;
 }
 
 /** Шлях до теки LanceDB конкретної моделі — те саме правило, що в config.js. */
@@ -446,6 +460,11 @@ class DbService {
           text,
           sourceType UNINDEXED
         );
+
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          key TEXT PRIMARY KEY,
+          appliedAt DATETIME NOT NULL
+        );
       `);
 
       // Міграції для старих баз. Єдина помилка, яку тут можна ігнорувати, —
@@ -455,9 +474,12 @@ class DbService {
       await this.addColumnIfMissing("apps", "helpBookFolder TEXT");
       await this.addColumnIfMissing("document_links", "sourceType TEXT DEFAULT 'WEB'");
       
-      // Динамічно додаємо колонку для поточної моделі
-      const currentCol = vectorizedColumnFor(config.embedModelName);
-      await this.addColumnIfMissing("apps", `${currentCol} BOOLEAN DEFAULT 0`);
+      // Колонки всіх моделей створюються з конфіга, а старі прапорці
+      // один раз переносяться без прив'язки до конкретних назв моделей.
+      await this.migrateVectorizedColumns([
+        config.embedModelName,
+        ...(config.embedModels || []),
+      ]);
 
       // 2. Ініціалізація LanceDB (для векторів)
       this._currentLanceDbPath = config.db.lancedbPath;
@@ -510,6 +532,80 @@ class DbService {
       await this.sqliteDb.run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
     } catch (error) {
       if (!/duplicate column name/i.test(error.message)) throw error;
+    }
+  }
+
+  /**
+   * Скидає прапорці всіх моделей, які реально є у схемі. Нову модель можна
+   * додати конфігом без правок цього методу.
+   */
+  async resetVectorizedFlags(appIds = null, modelNames = null) {
+    const schemaColumns = await this.vectorizedColumns();
+    const requestedColumns = Array.isArray(modelNames)
+      ? modelNames.map(vectorizedColumnFor)
+      : schemaColumns;
+    const columns = [...new Set(requestedColumns)].filter(
+      (name) => /^vectorized_[a-z0-9_]+$/i.test(name) && schemaColumns.includes(name),
+    );
+    if (columns.length === 0) return;
+
+    const assignments = columns.map((name) => `"${name}" = 0`).join(", ");
+    if (appIds === null) {
+      await this.sqliteDb.exec(`UPDATE apps SET ${assignments}`);
+      return;
+    }
+
+    const ids = [...new Set(appIds.filter(Boolean))];
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => "?").join(", ");
+    await this.sqliteDb.run(
+      `UPDATE apps SET ${assignments} WHERE id IN (${placeholders})`,
+      ids,
+    );
+  }
+
+  /**
+   * Одноразово переносить стан із коротких легасі-колонок у колонки з повною
+   * назвою моделі. Якщо кілька моделей мають однаковий тег, неоднозначний старий
+   * прапорець не копіюється жодній із них.
+   */
+  async migrateVectorizedColumns(modelNames) {
+    const models = [...new Set(modelNames.filter(Boolean))];
+    const legacyOwners = new Map();
+    for (const model of models) {
+      const legacy = legacyVectorizedColumnFor(model);
+      if (!legacy) continue;
+      legacyOwners.set(legacy, (legacyOwners.get(legacy) || 0) + 1);
+    }
+
+    for (const model of models) {
+      const column = vectorizedColumnFor(model);
+      await this.addColumnIfMissing("apps", `${column} BOOLEAN DEFAULT 0`);
+
+      const migrationKey = `vectorized-column-v2:${column}`;
+      const applied = await this.sqliteDb.get(
+        `SELECT 1 AS applied FROM schema_migrations WHERE key = ?`,
+        [migrationKey],
+      );
+      if (applied) continue;
+
+      const legacy = legacyVectorizedColumnFor(model);
+      const columns = await this.vectorizedColumns();
+      if (
+        legacy &&
+        legacy !== column &&
+        legacyOwners.get(legacy) === 1 &&
+        columns.includes(legacy)
+      ) {
+        await this.sqliteDb.exec(
+          `UPDATE apps SET "${column}" = 1 WHERE "${legacy}" = 1`,
+        );
+      }
+
+      await this.sqliteDb.run(
+        `INSERT INTO schema_migrations (key, appliedAt) VALUES (?, ?)`,
+        [migrationKey, new Date().toISOString()],
+      );
     }
   }
 
@@ -688,9 +784,8 @@ class DbService {
       }
       // Коли видаляємо вектори, також треба видалити текстовий пошуковий індекс (бо він містить ті ж самі чанки)
       await this.sqliteDb.exec(`DELETE FROM chunks_fts`);
-      // І скинути прапорці векторизації для всіх програм.
-      // Колонки `vectorized` у схемі немає — є vectorized_4b і vectorized_0_6b.
-      await this.sqliteDb.exec(`UPDATE apps SET vectorized_4b = 0, vectorized_0_6b = 0`);
+      // Видалено LanceDB лише поточної моделі — її прапорець і скидаємо.
+      await this.resetVectorizedFlags(null, [config.embedModelName]);
     } else {
       await this.sqliteDb.exec(`DELETE FROM ${tableName}`);
     }
@@ -724,10 +819,8 @@ class DbService {
       SELECT DISTINCT app_id FROM document_links WHERE sourceType = ?
     `, [type]);
     
-    // 2. Скидаємо їм прапорці векторизації
-    for (const app of appsToUpdate) {
-      await this.sqliteDb.run("UPDATE apps SET vectorized_4b = 0, vectorized_0_6b = 0 WHERE id = ?", [app.app_id]);
-    }
+    // 2. Скидаємо їм прапорці векторизації всіх моделей
+    await this.resetVectorizedFlags(appsToUpdate.map((app) => app.app_id));
     
     // 3. Видаляємо з FTS та LanceDB
     await this.sqliteDb.run("DELETE FROM chunks_fts WHERE sourceType = ?", [type]);
@@ -818,8 +911,8 @@ class DbService {
   modelsFromConfig() {
     const listed = [
       config.embedModelName,
-      ...(config.bootstrap?.requiredModels || []),
-      ...(config.bootstrap?.optionalModels || []),
+      ...(config.embedModels || []),
+      ...(config.rag?.benchmark?.axes?.embedModel || []),
     ];
     return [...new Set(listed.filter((name) => typeof name === "string" && name.trim()))];
   }
