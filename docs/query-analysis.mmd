@@ -28,12 +28,13 @@ graph TD
         HybridFork --> FtsSearch
         HybridFork --> GenQueryVector
         
-        FtsSearch --> RRF[Reciprocal Rank Fusion<br>Об'єднання результатів]
-        VectorSearch --> RRF
+        FtsSearch -. Тільки Hybrid Mode .-> RRF[Reciprocal Rank Fusion<br>Об'єднання результатів]
+        VectorSearch -. Тільки Hybrid Mode .-> RRF
     end
     
     VectorSearch -. Тільки Vector Mode .-> StrictTopK
-    RRF --> StrictTopK
+    RRF -. Тільки Hybrid Mode .-> HasResults
+    FtsSearch -. Тільки FTS Mode .-> HasResults
     
     subgraph RelevanceFiltering [Етап 2: Відбір релевантного контексту]
         StrictTopK[Strict Top-K Filter<br>Відкидання чанків з _distance > 0.95]
@@ -56,8 +57,8 @@ graph TD
         ParseResult{Парсинг відповіді LLM}
         ParseResult -- "INVALID_QUERY" --> Fallback1(Відповідь: Незрозумілий запит)
         ParseResult -- "NOT_FOUND" --> Fallback2(Відповідь: Програми не знайдено)
-        ParseResult -- "[SOURCE_ID: X]" --> ExtractApp[Витягування повної статті<br>та назви програми з БД]
-        ExtractApp --> FormatOutput["CLI Рендер Markdown (marked)<br>+ Додавання повної статті"]
+        ParseResult -- "[SOURCE_ID: X] або JSON" --> ExtractApp[Ідентифікація програми<br>зі списку parentDocuments]
+        ExtractApp --> FormatOutput["UI Рендер Markdown (marked)<br>+ Додавання повної статті"]
     end
     
     FormatOutput --> End([Вивід результату користувачу])

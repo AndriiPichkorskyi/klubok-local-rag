@@ -43,7 +43,7 @@ graph TD
 
     subgraph KeywordAugmentation [Етап 3: Document Expansion - Keyword Augmentation]
         KeywordCheck{Чи увімкнено<br>Keyword Augmentation?}
-        KeywordCheck -- Так --> GenKeywords["LLM qwen3 генерує<br>наміри користувача<br><i>(Паралельні пакети по 4)</i>"]
+        KeywordCheck -- Так --> GenKeywords["LLM генерує наміри<br>користувача<br><i>(Конфігурований паралелізм)</i>"]
         GenKeywords --> SaveKeywords[(SQLite: збереження<br>в колонку keywords)]
         SaveKeywords --> SyntheticChunk[Створення штучного чанку<br>з ключовими словами]
     end

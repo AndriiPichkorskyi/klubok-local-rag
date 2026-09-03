@@ -16,9 +16,9 @@ graph TD
     end
     
     subgraph MacOS [macOS Реалізація]
-        Mac --> Mdfind[mdfind - пошук Spotlight]
-        Mac --> Plutil[plutil - парсинг Info.plist]
-        Mac --> OsaScript[osascript - AppleScript взаємодія]
+        Mac --> Open[open - запуск програм]
+        Mac --> Sips[sips - зміна розміру зображень]
+        Mac -.-> Plutil["plutil - парсинг Info.plist (через scanner.js)"]
     end
     
     classDef core fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
@@ -29,5 +29,5 @@ graph TD
     class Sidecar,L1 core;
     class Platform,L2 abstract;
     class Mac,Win,Lin,L3 adapter;
-    class Mdfind,Plutil,OsaScript,L4 os;
+    class Open,Sips,Plutil,L4 os;
     classDef default color:#333333;
