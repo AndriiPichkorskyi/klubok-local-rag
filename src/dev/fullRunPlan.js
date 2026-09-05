@@ -12,9 +12,17 @@ export const PIPELINE_STEPS = [
   { id: "scan", method: "pipeline.scanApps", label: "Сканування програм" },
   { id: "web", method: "pipeline.fetchDocs", label: "Веб-довідка" },
   { id: "local", method: "pipeline.fetchLocalDocs", label: "Локальна довідка" },
-  { id: "keywords", method: "pipeline.keywordAugmentation", label: "Наміри (keywords)" },
+  {
+    id: "keywords",
+    method: "pipeline.keywordAugmentation",
+    label: "Наміри (keywords)",
+  },
   { id: "vectors", method: "pipeline.vectorize", label: "Вектори" },
-  { id: "intentVectors", method: "pipeline.vectorizeIntents", label: "Вектори намірів" },
+  {
+    id: "intentVectors",
+    method: "pipeline.vectorizeIntents",
+    label: "Вектори намірів",
+  },
 ];
 
 /**
@@ -24,7 +32,12 @@ export const PIPELINE_STEPS = [
  */
 export const TEST_STEPS = [
   { id: "ragTests", method: "tests.run", label: "RAG-бенчмарк", kind: "rag" },
-  { id: "externalTests", method: "tests.runExternal", label: "EXTERNAL-тести", kind: "external" },
+  {
+    id: "externalTests",
+    method: "tests.runExternal",
+    label: "EXTERNAL-тести",
+    kind: "external",
+  },
 ];
 
 /** Прапорці за замовчуванням: усі кроки пайплайна, жодного тесту. */
@@ -55,7 +68,9 @@ function vectorSteps(models, configModel) {
         key: "full:vectors",
         method: "pipeline.vectorize",
         params: {},
-        label: configModel ? `Вектори · ${configModel} (з конфіга)` : "Вектори · модель з конфіга",
+        label: configModel
+          ? `Вектори · ${configModel} (з конфіга)`
+          : "Вектори · модель з конфіга",
       },
     ];
   }
@@ -77,9 +92,7 @@ function vectorSteps(models, configModel) {
       method: "pipeline.fullSync",
       params: { models: foreign },
       label: `Вектори · ${foreign.join(", ")}`,
-      warn:
-        "pipeline.vectorize вміє лише модель із конфіга, тому для цих моделей " +
-        "викликається pipeline.fullSync({models}) — він повторює кроки 1–4 всередині себе.",
+      warn: "Ці моделі векторизуються окремим процесом, який повторює кроки 1–4 — крок буде довшим.",
     });
   }
   return steps;
@@ -109,20 +122,27 @@ export function buildPlan(
       plan.push(...vectorSteps(models, configModel));
       continue;
     }
-    plan.push({ key: `full:${step.id}`, method: step.method, params: {}, label: step.label });
+    plan.push({
+      key: `full:${step.id}`,
+      method: step.method,
+      params: {},
+      label: step.label,
+    });
   }
 
   for (const step of TEST_STEPS) {
     if (!tests[step.id]) continue;
-    
+
     // Якщо вибрані моделі для тестів, створюємо крок для кожної пари.
     // null означає «не перевизначати»: фактичне значення візьме sidecar із конфіга.
-    const chosenChat = Array.isArray(chatModels) && chatModels.length > 0
-      ? chatModels
-      : [configChatModel || null];
-    const chosenEmbed = Array.isArray(models) && models.length > 0
-      ? models
-      : [configModel || null];
+    const chosenChat =
+      Array.isArray(chatModels) && chatModels.length > 0
+        ? chatModels
+        : [configChatModel || null];
+    const chosenEmbed =
+      Array.isArray(models) && models.length > 0
+        ? models
+        : [configModel || null];
 
     for (const embed of chosenEmbed) {
       for (const chat of chosenChat) {
@@ -153,25 +173,33 @@ export function describeStepResult(method, result) {
 
   switch (method) {
     case "pipeline.scanApps":
-      if (num(result.newApps) !== undefined) lines.push(`нових: ${result.newApps}`);
+      if (num(result.newApps) !== undefined)
+        lines.push(`нових: ${result.newApps}`);
       break;
     case "pipeline.fetchDocs":
     case "pipeline.fetchLocalDocs":
-      if (num(result.docsCount) !== undefined) lines.push(`документів: ${result.docsCount}`);
+      if (num(result.docsCount) !== undefined)
+        lines.push(`документів: ${result.docsCount}`);
       if (result.mbDownloaded) lines.push(`${result.mbDownloaded} МБ`);
       break;
     case "pipeline.keywordAugmentation":
-      if (num(result.generated) !== undefined) lines.push(`згенеровано: ${result.generated}`);
+      if (num(result.generated) !== undefined)
+        lines.push(`згенеровано: ${result.generated}`);
       break;
     case "pipeline.vectorize":
     case "pipeline.vectorizeIntents":
-      if (num(result.chunks) !== undefined) lines.push(`чанків: ${result.chunks}`);
+      if (num(result.chunks) !== undefined)
+        lines.push(`чанків: ${result.chunks}`);
       break;
     case "pipeline.fullSync":
-      if (result.stoppedAt) lines.push(`спинився на кроці: ${result.stoppedAt}`);
-      if (num(result.newApps) !== undefined) lines.push(`нових програм: ${result.newApps}`);
-      if (num(result.docsCount) !== undefined) lines.push(`документів: ${result.docsCount}`);
-      if (num(result.generated) !== undefined) lines.push(`намірів: ${result.generated}`);
+      if (result.stoppedAt)
+        lines.push(`спинився на кроці: ${result.stoppedAt}`);
+      if (num(result.newApps) !== undefined)
+        lines.push(`нових програм: ${result.newApps}`);
+      if (num(result.docsCount) !== undefined)
+        lines.push(`документів: ${result.docsCount}`);
+      if (num(result.generated) !== undefined)
+        lines.push(`намірів: ${result.generated}`);
       if (result.perModel && typeof result.perModel === "object") {
         for (const [model, value] of Object.entries(result.perModel)) {
           const text =
@@ -188,8 +216,10 @@ export function describeStepResult(method, result) {
     case "tests.runExternal": {
       const passed = num(result.passed);
       const total = num(result.totalCases);
-      if (passed !== undefined && total !== undefined) lines.push(`пройдено ${passed} з ${total}`);
-      if (num(result.failed) !== undefined) lines.push(`провалено ${result.failed}`);
+      if (passed !== undefined && total !== undefined)
+        lines.push(`пройдено ${passed} з ${total}`);
+      if (num(result.failed) !== undefined)
+        lines.push(`провалено ${result.failed}`);
       if (num(result.passRate) !== undefined) lines.push(`${result.passRate}%`);
       if (result.reportPath) lines.push(`звіт: ${result.reportPath}`);
       break;

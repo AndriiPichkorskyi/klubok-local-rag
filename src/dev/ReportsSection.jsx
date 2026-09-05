@@ -12,6 +12,8 @@ import { opState } from "./useDevRuntime";
 import { formatBytes, formatDateTime } from "./format";
 import { summarizeReport } from "./reportAnalytics";
 
+import Checkbox from "./Checkbox";
+
 const ReportComparison = lazy(() => import("./ReportComparison"));
 
 export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
@@ -24,7 +26,8 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
   const [selected, setSelected] = useState(null);
   const [compareSelected, setCompareSelected] = useState([]);
 
-  const loadList = () => run("reports.list", "Список звітів", (ref) => rpc("reports.list", {}, ref));
+  const loadList = () =>
+    run("reports.list", "Список звітів", (ref) => rpc("reports.list", {}, ref));
 
   // Список оновлюємо на монтуванні і після кожного прогону тестів.
   useEffect(() => {
@@ -35,7 +38,9 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
   const openReport = (name) => {
     if (readOp.running) return;
     setSelected(name);
-    run("reports.read", `Звіт ${name}`, (ref) => rpc("reports.read", { name }, ref));
+    run("reports.read", `Звіт ${name}`, (ref) =>
+      rpc("reports.read", { name }, ref),
+    );
   };
 
   // Таблицю показуємо лише для того файлу, який реально прочитаний.
@@ -43,7 +48,9 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
 
   const toggleComparison = (name) => {
     setCompareSelected((current) =>
-      current.includes(name) ? current.filter((item) => item !== name) : [...current, name],
+      current.includes(name)
+        ? current.filter((item) => item !== name)
+        : [...current, name],
     );
   };
 
@@ -52,7 +59,11 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
     run("reports.compare", `Порівняння ${names.length} звітів`, async (ref) => {
       const items = [];
       for (const [index, name] of names.entries()) {
-        const value = await rpc("reports.read", { name }, `${ref}:compare:${index}`);
+        const value = await rpc(
+          "reports.read",
+          { name },
+          `${ref}:compare:${index}`,
+        );
         items.push(summarizeReport(name, value.report));
       }
       return { names, items };
@@ -74,7 +85,10 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
       {reports.length === 0 && !listOp.running ? (
         <div className="muted dp-small">Жодного JSON-звіту не знайдено.</div>
       ) : (
-        <div className="dp-scroll-x" style={{ maxHeight: 220, overflowY: "auto" }}>
+        <div
+          className="dp-scroll-x"
+          style={{ maxHeight: 220, overflowY: "auto" }}
+        >
           <table className="dp-table">
             <thead>
               <tr>
@@ -88,13 +102,32 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
               {reports.map((report) => (
                 <tr
                   key={report.name}
-                  className={report.name === selected ? "dp-selected" : undefined}
+                  // Клік по рядку відкриває звіт, тож рядок мусить це показувати
+                  // САМ: курсор і підсвітка на ховері, видимий фокус із клавіатури.
+                  // Раніше єдиною підказкою був title, який видно лише через секунду.
+                  className={[
+                    "dp-row",
+                    readOp.running ? "is-busy" : "is-clickable",
+                    report.name === selected ? "dp-selected" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  tabIndex={readOp.running ? -1 : 0}
                   onClick={() => openReport(report.name)}
-                  style={{ cursor: readOp.running ? "default" : "pointer" }}
-                  title={readOp.running ? "Зачекайте: читається попередній звіт" : "Показати таблицею"}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openReport(report.name);
+                    }
+                  }}
+                  title={
+                    readOp.running
+                      ? "Зачекайте: читається попередній звіт"
+                      : "Показати таблицею"
+                  }
                 >
                   <td onClick={(event) => event.stopPropagation()}>
-                    <input
+                    <Checkbox
                       className="dp-report-checkbox"
                       type="checkbox"
                       aria-label={`Порівнювати ${report.name}`}
@@ -114,22 +147,44 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
 
       {reports.length > 0 ? (
         <div className="dp-compare-controls">
-          <button type="button" onClick={() => setCompareSelected(reports.map((report) => report.name))}>
+          <button
+            type="button"
+            onClick={() =>
+              setCompareSelected(reports.map((report) => report.name))
+            }
+          >
             Обрати всі
           </button>
-          <button type="button" onClick={() => setCompareSelected([])} disabled={compareSelected.length === 0}>
+          <button
+            type="button"
+            onClick={() => setCompareSelected([])}
+            disabled={compareSelected.length === 0}
+          >
             Очистити вибір
           </button>
-          <button type="button" onClick={compareReports} disabled={compareSelected.length < 2 || compareOp.running}>
-            {compareOp.running ? "Порівняння…" : `Порівняти (${compareSelected.length})`}
+          <button
+            type="button"
+            onClick={compareReports}
+            disabled={compareSelected.length < 2 || compareOp.running}
+          >
+            {compareOp.running
+              ? "Порівняння…"
+              : `Порівняти (${compareSelected.length})`}
           </button>
-          <span className="muted dp-small">Для matrix моделей оберіть звіти однакового тестового набору й осей.</span>
+          <span className="muted dp-small">
+            Для matrix моделей оберіть звіти однакового тестового набору й осей.
+          </span>
         </div>
       ) : null}
 
-      {compareOp.error ? <div className="dp-alert">{compareOp.error}</div> : null}
-      {Array.isArray(compareOp.result?.items) && compareOp.result.items.length > 0 ? (
-        <Suspense fallback={<div className="muted dp-small">Готую порівняння…</div>}>
+      {compareOp.error ? (
+        <div className="dp-alert">{compareOp.error}</div>
+      ) : null}
+      {Array.isArray(compareOp.result?.items) &&
+      compareOp.result.items.length > 0 ? (
+        <Suspense
+          fallback={<div className="muted dp-small">Готую порівняння…</div>}
+        >
           <ReportComparison items={compareOp.result.items} />
         </Suspense>
       ) : null}

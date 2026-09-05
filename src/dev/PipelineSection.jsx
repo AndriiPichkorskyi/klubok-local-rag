@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { rpc } from "../ipc";
 import Section from "./Section";
+import Checkbox from "./Checkbox";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { summarizeResult } from "./format";
@@ -61,27 +62,29 @@ export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
   const fullSync = opState(ops, "pipeline.fullSync");
 
   return (
-    <Section title="Пайплайн індексації" hint="кроки виконуються паралельно з рештою панелі">
+    <Section
+      title="Окремі кроки пайплайна"
+      hint="для налагодження і відновлення: один крок, без послідовності"
+      collapsible
+    >
       <div className="dp-grid">{STEPS.map(renderOp)}</div>
 
       <div className="dp-op">
         {renderOp({ key: "pipeline.fullSync", label: "Повне оновлення (усі кроки поспіль)" })}
-        <div className="row dp-small">
-          <span className="muted">Векторизувати для моделей:</span>
+        <div className="dp-check-group">
+          <span className="muted dp-small">Векторизувати для моделей:</span>
           {embedModels.map((model) => (
-            <label key={model} className="row" style={{ gap: 4 }}>
-              <input
-                type="checkbox"
-                style={{ width: "auto" }}
-                checked={models.includes(model)}
-                onChange={() => toggleModel(model)}
-                disabled={fullSync.running}
-              />
+            <Checkbox
+              key={model}
+              checked={models.includes(model)}
+              onChange={() => toggleModel(model)}
+              disabled={fullSync.running}
+            >
               {model}
-            </label>
+            </Checkbox>
           ))}
           {models.length === 0 ? (
-            <span className="muted">нічого не обрано — модель з конфіга</span>
+            <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
           ) : null}
         </div>
       </div>

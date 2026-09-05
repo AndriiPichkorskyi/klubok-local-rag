@@ -16,6 +16,7 @@ import { opState } from "./useDevRuntime";
 import { useFullRun } from "./useFullRun";
 import { buildPlan, defaultSelection, describeStepResult, testsFailed, PIPELINE_STEPS, TEST_STEPS } from "./fullRunPlan";
 import { formatExecutionTime } from "./format";
+import Checkbox from "./Checkbox";
 import BenchmarkAxesForm from "./BenchmarkAxesForm";
 import { formatLiveMetrics } from "./systemMetrics";
 
@@ -37,15 +38,6 @@ function stepsWord(count) {
   if (last === 1) return "крок";
   if (last >= 2 && last <= 4) return "кроки";
   return "кроків";
-}
-
-function Checkbox({ checked, onChange, disabled, children }) {
-  return (
-    <label className="row dp-check">
-      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
-      {children}
-    </label>
-  );
 }
 
 export default function FullRunSection({
@@ -137,6 +129,10 @@ export default function FullRunSection({
       prev.includes(model) ? prev.filter((item) => item !== model) : prev.concat(model),
     );
 
+  // Кожна пара «embed × chat» — окремий виклик tests.* (див. buildPlan), тож
+  // саме на це число множиться ціна прогону в оцінці часу.
+  const modelPairs = Math.max(1, models.length) * Math.max(1, selectedChat?.length || 0);
+
   const rows = running || state !== "idle" ? entries : plan.map((step) => ({ ...step, status: "pending" }));
   const doneCount = entries.filter((entry) => entry.status === "done").length;
 
@@ -145,69 +141,88 @@ export default function FullRunSection({
       title="Повний прогін (пайплайн + тести)"
       hint={metrics && running ? `Виконання... ${formatLiveMetrics(metrics)}` : "кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"}
     >
-      <div className="dp-check-group">
-        <span className="muted dp-small">Кроки пайплайна:</span>
-        {PIPELINE_STEPS.map((step) => (
-          <Checkbox
-            key={step.id}
-            checked={Boolean(selection.steps[step.id])}
-            onChange={() => toggleStep(step.id)}
-            disabled={running}
-          >
-            {step.label}
-          </Checkbox>
-        ))}
-      </div>
+      {/* Чотири набори прапорців — це вибір ЩО запускати, тому вони стоять
+          поруч колонками, а не тягнуться в один рядок із переносами: у вузькій
+          панелі перенесені прапорці зливались в одну кашу без видимих меж. */}
+      <div className="dp-picker">
+        <fieldset className="dp-picker-group">
+          <legend className="dp-picker-title">Кроки пайплайна</legend>
+          <div className="dp-picker-list">
+            {PIPELINE_STEPS.map((step) => (
+              <Checkbox
+                key={step.id}
+                checked={Boolean(selection.steps[step.id])}
+                onChange={() => toggleStep(step.id)}
+                disabled={running}
+              >
+                {step.label}
+              </Checkbox>
+            ))}
+          </div>
+        </fieldset>
 
-      <div className="dp-check-group">
-        <span className="muted dp-small">Embed-моделі (для векторизації та/або тестів):</span>
-        {embedModels.map((model) => (
-          <Checkbox
-            key={model}
-            checked={models.includes(model)}
-            onChange={() => toggleModel(model)}
-            disabled={running}
-          >
-            {model}
-            {model === configModel ? " (з конфіга)" : ""}
-          </Checkbox>
-        ))}
-        {models.length === 0 ? (
-          <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
-        ) : null}
-      </div>
+        <fieldset className="dp-picker-group">
+          <legend className="dp-picker-title">Embed-моделі</legend>
+          <div className="dp-picker-list">
+            {embedModels.map((model) => (
+              <Checkbox
+                key={model}
+                checked={models.includes(model)}
+                onChange={() => toggleModel(model)}
+                disabled={running}
+                hint={model === configModel ? "з конфіга" : null}
+              >
+                {model}
+              </Checkbox>
+            ))}
+          </div>
+          <div className="dp-picker-foot muted dp-small">
+            {models.length === 0
+              ? "нічого не обрано — модель із конфіга"
+              : "для векторизації та тестів"}
+          </div>
+        </fieldset>
 
-      
-      <div className="dp-check-group">
-        <span className="muted dp-small">Chat-моделі для тестування:</span>
-        {chatModels?.map((model) => (
-          <Checkbox
-            key={model}
-            checked={selectedChat.includes(model)}
-            onChange={() => toggleChatModel(model)}
-            disabled={running}
-          >
-            {model}
-            {model === configChatModel ? " (з конфіга)" : ""}
-          </Checkbox>
-        ))}
-        {selectedChat.length === 0 ? (
-          <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
-        ) : null}
-      </div>
+        <fieldset className="dp-picker-group">
+          <legend className="dp-picker-title">Chat-моделі</legend>
+          <div className="dp-picker-list">
+            {chatModels?.map((model) => (
+              <Checkbox
+                key={model}
+                checked={selectedChat.includes(model)}
+                onChange={() => toggleChatModel(model)}
+                disabled={running}
+                hint={model === configChatModel ? "з конфіга" : null}
+              >
+                {model}
+              </Checkbox>
+            ))}
+          </div>
+          <div className="dp-picker-foot muted dp-small">
+            {selectedChat.length === 0 ? "нічого не обрано — модель із конфіга" : "лише для тестів"}
+          </div>
+        </fieldset>
 
-      <div className="dp-check-group">
-        <span className="muted dp-small">Тести після пайплайна:</span>
-        {TEST_STEPS.map((step) => (
-          <Checkbox
-            key={step.id}
-            checked={Boolean(selection.tests[step.id])}
-            onChange={() => toggleTest(step.id)}
-            disabled={running}
-          >
-            {step.label}
-          </Checkbox>
-        ))}
+        <fieldset className="dp-picker-group">
+          <legend className="dp-picker-title">Тести після пайплайна</legend>
+          <div className="dp-picker-list">
+            {TEST_STEPS.map((step) => (
+              <Checkbox
+                key={step.id}
+                checked={Boolean(selection.tests[step.id])}
+                onChange={() => toggleTest(step.id)}
+                disabled={running}
+              >
+                {step.label}
+              </Checkbox>
+            ))}
+          </div>
+          <div className="dp-picker-foot muted dp-small">
+            {modelPairs > 1
+              ? `кожен тест піде ${modelPairs} разів — по разу на пару моделей`
+              : "з моделями з конфіга"}
+          </div>
+        </fieldset>
       </div>
 
       <div className="dp-test-controls">
@@ -228,7 +243,9 @@ export default function FullRunSection({
       </div>
 
       {/* Осі бенчмарку. Секція прогону — саме те місце, де їх задають перед ніччю. */}
-      {benchmark ? <BenchmarkAxesForm benchmark={benchmark} disabled={running} /> : null}
+      {benchmark ? (
+        <BenchmarkAxesForm benchmark={benchmark} disabled={running} runMultiplier={modelPairs} />
+      ) : null}
 
       {startBlocked ? (
         <div className="dp-alert">
