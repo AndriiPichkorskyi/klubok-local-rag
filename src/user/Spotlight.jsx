@@ -28,7 +28,17 @@ export default function Spotlight() {
   const [openAlts, setOpenAlts] = useState(() => new Set());
 
   const inputRef = useRef(null);
-  const { phase, progress, answer, error, askedText, elapsedMs, run, cancel, reset } = useSearch();
+  const {
+    phase,
+    progress,
+    answer,
+    error,
+    askedText,
+    elapsedMs,
+    run,
+    cancel,
+    reset,
+  } = useSearch();
 
   // Модуль 2.1: поки оточення не готове, пошук показувати нема сенсу — він
   // однаково впаде, і людина побачить помилку RAG замість «запустіть Ollama».
@@ -66,15 +76,15 @@ export default function Spotlight() {
   }, []);
 
   /** Перепитати про конкретну альтернативу — деталей по ній у відповіді немає. */
-  const askAbout = useCallback(
-    (appName) => {
-      const base = askedText || text;
-      const next = `${base} у ${appName}`.trim();
-      setText(next);
-      startSearch(next);
-    },
-    [askedText, text, startSearch],
-  );
+  // const askAbout = useCallback(
+  //   (appName) => {
+  //     const base = askedText || text;
+  //     const next = `${base} у ${appName}`.trim();
+  //     setText(next);
+  //     startSearch(next);
+  //   },
+  //   [askedText, text, startSearch],
+  // );
 
   /** Enter по вибраному елементу: розгорнути статтю або альтернативу. */
   const activateSelection = useCallback(() => {
@@ -179,7 +189,8 @@ export default function Spotlight() {
             {isIdle ? (
               <>
                 <p className="sp-hint">
-                  Опишіть завдання своїми словами — знайдемо програму, яка вже є на цьому Mac.
+                  Опишіть завдання своїми словами — знайдемо програму, яка вже є
+                  на цьому Mac.
                   <br />
                   Наприклад:
                 </p>
@@ -213,7 +224,10 @@ export default function Spotlight() {
 
             {phase === "error" ? (
               <div className="sp-result">
-                <ErrorView error={error} onRetry={() => startSearch(askedText || text)} />
+                <ErrorView
+                  error={error}
+                  onRetry={() => startSearch(askedText || text)}
+                />
               </div>
             ) : null}
 
@@ -227,14 +241,14 @@ export default function Spotlight() {
                 onToggleSteps={() => setStepsOpen((v) => !v)}
                 openAlts={openAlts}
                 onToggleAlt={toggleAlt}
-                onAskAbout={askAbout}
+                // onAskAbout={askAbout}
               />
             ) : null}
 
             {phase === "done" && itemCount > 0 ? (
               <p className="sp-hint">
-                <kbd>↑</kbd> <kbd>↓</kbd> — рух по результатах, <kbd>Enter</kbd> — розгорнути,{" "}
-                <kbd>Esc</kbd> — очистити
+                <kbd>↑</kbd> <kbd>↓</kbd> — рух по результатах, <kbd>Enter</kbd>{" "}
+                — розгорнути, <kbd>Esc</kbd> — очистити
               </p>
             ) : null}
           </>
