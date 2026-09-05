@@ -21,7 +21,7 @@
  * на тисячі викликів не породжує журнал на гігабайт.
  *
  * Налаштування (змінні оточення, дефолти в дужках):
- *   SIDECAR_LOG_DIR       — тека журналів (sidecar/logs)
+ *   SIDECAR_LOG_DIR       — тека журналів (<тека даних>/logs)
  *   SIDECAR_LOG_LEVEL     — рівень pino (info)
  *   SIDECAR_LOG_MAX_SIZE  — максимальний розмір одного файла (5m)
  *   SIDECAR_LOG_KEEP      — скільки старих файлів тримати, крім активного (5)
@@ -73,7 +73,7 @@ class LoggerService {
     // Раніше тут був path.resolve("logs") — тека залежала від cwd процесу.
     // З CLI (npm --prefix sidecar) виходило sidecar/logs, а під Tauri, який
     // стартує node з кореня проєкта, логи розповзались у другу теку.
-    this.logsDir = process.env.SIDECAR_LOG_DIR || path.join(config.paths.sidecarDir, "logs");
+    this.logsDir = process.env.SIDECAR_LOG_DIR || path.join(config.paths.dataDir, "logs");
     this.queryLogFile = path.join(this.logsDir, "queries.log");
     /** Базове ім'я діагностичного журналу; pino-roll додає номер: sidecar.1.log */
     this.diagLogFile = path.join(this.logsDir, "sidecar.log");
@@ -471,11 +471,10 @@ class LoggerService {
    * закодоване зображення.
    */
 
-  /** Тека журналів (шлях із конфіга відносний до кореня проєкта). */
+  /** Тека журналів (шлях із конфіга відносний до теки даних). */
   walkthroughJournalDir() {
-    const configured =
-      config.walkthrough?.journalDir || "./sidecar/data/walkthrough-journal";
-    return path.resolve(config.paths.projectDir, configured);
+    const configured = config.walkthrough?.journalDir || "data/walkthrough-journal";
+    return path.resolve(config.paths.dataDir, configured);
   }
 
   /** Чи вести журнал сесій. Вимикається одним ключем конфіга. */

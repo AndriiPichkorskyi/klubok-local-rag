@@ -14,10 +14,23 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/** Корінь sidecar (тут лежать rag_metadata.sqlite та lancedb_data_*) */
+/** Корінь sidecar (тут лежить КОД модулів) */
 const SIDECAR_DIR = path.resolve(__dirname, "../../");
 /** Корінь усього проєкта (тут лежить папка config/) */
 const PROJECT_DIR = path.resolve(__dirname, "../../../");
+
+/**
+ * Тека ЗАПИСУВАНИХ даних: rag_metadata.sqlite, lancedb_data_*, журнали,
+ * звіти тестів. За замовчуванням — корінь sidecar, тобто поведінка та сама,
+ * що й до появи цієї змінної.
+ *
+ * Змінна потрібна зібраному застосунку: там код лежить у Contents/Resources
+ * (тільки для читання), і писати базу поруч із кодом не можна. Tauri передає
+ * сюди теку в ~/Library/Application Support.
+ */
+const DATA_DIR = process.env.SIDECAR_DATA_DIR
+  ? path.resolve(process.env.SIDECAR_DATA_DIR)
+  : SIDECAR_DIR;
 
 export const CONFIG_PATH =
   process.env.PIPELINE_CONFIG || path.join(PROJECT_DIR, "config", "pipeline.config.json");
@@ -45,9 +58,9 @@ export function buildConfig() {
       ...new Set([embedModel, ...(Array.isArray(file.embedModels) ? file.embedModels : [])]),
     ],
     db: {
-      sqlitePath: path.join(SIDECAR_DIR, "rag_metadata.sqlite"),
+      sqlitePath: path.join(DATA_DIR, "rag_metadata.sqlite"),
       get lancedbPath() {
-        return path.join(SIDECAR_DIR, `lancedb_data_${configObj.embedModelName.replace(":", "_")}`);
+        return path.join(DATA_DIR, `lancedb_data_${configObj.embedModelName.replace(":", "_")}`);
       },
     },
     ollama: {
@@ -69,7 +82,12 @@ export function buildConfig() {
     rag: file.rag,
     bootstrap: file.bootstrap,
     walkthrough: file.walkthrough,
-    paths: { sidecarDir: SIDECAR_DIR, projectDir: PROJECT_DIR, configPath: CONFIG_PATH },
+    paths: {
+      sidecarDir: SIDECAR_DIR,
+      projectDir: PROJECT_DIR,
+      dataDir: DATA_DIR,
+      configPath: CONFIG_PATH,
+    },
   };
   
   return configObj;

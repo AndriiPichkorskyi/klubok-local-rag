@@ -240,7 +240,7 @@ export async function runExternalTests(onProgress = () => {}, options = {}) {
 
     // Звіт пишемо на диск поступово: результати не накопичуються в пам'яті,
     // лишаються самі лічильники (див. tests/report-stream.js).
-    const reportsDir = path.join(config.paths.sidecarDir, "test-reports");
+    const reportsDir = path.join(config.paths.dataDir, "test-reports");
     await fs.mkdir(reportsDir, { recursive: true });
     const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
     const reportPath = path.join(reportsDir, `report-external-${dateStr}.json`);

@@ -21,10 +21,14 @@ import { getPlatformAdapter } from "../../platform/index.js";
 /** Розширення, які ми вважаємо знімками і маємо право видаляти. */
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".tiff", ".bmp"];
 
-/** Абсолютний шлях до теки знімків із конфіга (він відносний до кореня проєкта). */
+/**
+  * Абсолютний шлях до теки знімків. Відносний шлях із конфіга рахується від теки
+  * ДАНИХ — так само, як його рахує Rust (`src-tauri/src/system.rs`), який ці
+  * знімки й створює. Спільна база резолву тут обов'язкова.
+  */
 export function screenshotsDir() {
-  const configured = config.walkthrough?.screenshotDir || "./sidecar/data/screenshots";
-  return path.resolve(config.paths.projectDir, configured);
+  const configured = config.walkthrough?.screenshotDir || "data/screenshots";
+  return path.resolve(config.paths.dataDir, configured);
 }
 
 /** Чи існує файл і чи він не порожній. */

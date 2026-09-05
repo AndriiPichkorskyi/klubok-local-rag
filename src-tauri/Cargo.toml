@@ -35,3 +35,7 @@ sysinfo = "0.39.6"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.25"
 core-foundation = "0.10"
+# libc — лише для SIGTERM дочірньому sidecar при виході: Child::kill() у std
+# надсилає SIGKILL, а нам потрібен чистий вихід (server.js на SIGTERM віддає
+# файл-замок і закриває з'єднання). Крейт уже є в Cargo.lock.
+libc = "0.2"

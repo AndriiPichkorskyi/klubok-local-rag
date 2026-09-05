@@ -5,7 +5,7 @@ export default function ErrorView({ error, onRetry }) {
       <h2>{error?.title || "Пошук не вдався"}</h2>
       <p>{error?.hint}</p>
       <div className="sp-progress-actions">
-        <button type="button" onClick={onRetry}>
+        <button type="button" className="btn-primary" onClick={onRetry}>
           Спробувати ще раз
         </button>
       </div>

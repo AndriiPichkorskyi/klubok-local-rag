@@ -70,7 +70,7 @@ const TABS = [
     owns: (key) =>
       key === "ping" ||
       key === "sidecarRestart" ||
-      key === "bootstrap.check" ||
+      key.startsWith("bootstrap.") ||
       key.startsWith("config."),
   },
 ];

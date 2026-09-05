@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Права, без яких вкладений Node не працює під hardened runtime, який Tauri
+    вмикає разом із підписом.
+
+    disable-library-validation — node підгружає нативні модулі (`sqlite3`,
+    `@lancedb/lancedb`) через dlopen. Library validation пускає лише код,
+    підписаний тією ж командою розробників; у самопідписаного сертифіката
+    Team ID немає взагалі, тому перевірка відхиляє власні ж модулі.
+
+    allow-jit і allow-unsigned-executable-memory — V8 генерує машинний код у
+    памʼяті. Без цих прав процес падає не з помилкою, а сигналом.
+
+    allow-dyld-environment-variables — потрібне лише як запобіжник: збірки
+    нативних модулів іноді покладаються на змінні dyld.
+  -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

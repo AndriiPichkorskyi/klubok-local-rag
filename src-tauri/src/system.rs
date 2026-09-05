@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-use crate::sidecar::find_root;
+use crate::sidecar::layout;
 
 /// Мітки вікон оверлея. Ті самі значення перелічені в `capabilities/default.json`:
 /// без цього вікно створиться, але не матиме права слухати події Tauri.
@@ -49,23 +49,26 @@ pub struct BoxNorm {
 
 /// Конфіг читаємо щоразу: `config.reload` міняє його на льоту, а знімок
 /// робиться рідко — кешувати нема сенсу.
-fn read_config(root: &Path) -> Value {
-    std::fs::read_to_string(root.join("config/pipeline.config.json"))
+fn read_config() -> Value {
+    std::fs::read_to_string(&layout().config)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or(Value::Null)
 }
 
-/// Тека знімків береться з конфіга; відносний шлях — від кореня проєкта.
-fn screenshot_dir(root: &Path, cfg: &Value) -> PathBuf {
+/// Тека знімків береться з конфіга; відносний шлях — від теки ДАНИХ, тієї самої,
+/// яку рахує `sidecar/src/config/config.js`. База резолву мусить бути спільною:
+/// інакше знімок пише Rust в одну теку, а Node шукає його в іншій, і крок тихо
+/// стає `unclear`.
+fn screenshot_dir(cfg: &Value) -> PathBuf {
     let raw = cfg["walkthrough"]["screenshotDir"]
         .as_str()
-        .unwrap_or("./sidecar/data/screenshots");
+        .unwrap_or("data/screenshots");
     let dir = PathBuf::from(raw);
     if dir.is_absolute() {
         dir
     } else {
-        root.join(dir)
+        layout().data.join(dir)
     }
 }
 
@@ -564,8 +567,7 @@ mod platform {
 /// текст людині. Мовчазний знімок без чужих вікон був би гіршим за відмову.
 #[tauri::command]
 pub async fn screen_capture(app: AppHandle, mode: Option<String>) -> Result<Value, String> {
-    let root = find_root();
-    let cfg = read_config(&root);
+    let cfg = read_config();
     let mode = mode
         .or_else(|| {
             cfg["walkthrough"]["captureMode"]
@@ -579,7 +581,7 @@ pub async fn screen_capture(app: AppHandle, mode: Option<String>) -> Result<Valu
         return Err(format!("{PRIVACY_HINT} Панель налаштувань: {PRIVACY_URL}"));
     }
 
-    let dir = screenshot_dir(&root, &cfg);
+    let dir = screenshot_dir(&cfg);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("не вдалося створити теку знімків {}: {e}", dir.display()))?;
     prune_old_shots(&dir);
@@ -694,7 +696,7 @@ pub async fn overlay_hide(app: AppHandle) -> Result<Value, String> {
 /// `box: null` — прибрати рамку.
 #[tauri::command]
 pub async fn overlay_highlight(app: AppHandle, r#box: Option<BoxNorm>) -> Result<Value, String> {
-    let cfg = read_config(&find_root());
+    let cfg = read_config();
     if !cfg["walkthrough"]["enableHighlight"]
         .as_bool()
         .unwrap_or(false)

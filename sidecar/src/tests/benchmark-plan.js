@@ -40,7 +40,7 @@ const estimateCache = new Map();
 
 /** Тека звітів. Береться з конфіга, а не з cwd (див. rpc.md, reports.list). */
 function reportsDir() {
-  return path.join(config.paths.sidecarDir, "test-reports");
+  return path.join(config.paths.dataDir, "test-reports");
 }
 
 /** Чи належить файл звіту цьому виду бенчмарку. */

@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import pc from "picocolors";
 import * as p from "@clack/prompts";
+import { config } from "../config/config.js";
 import { renderLanguageTables } from "../tests/language.js";
 
 /**
@@ -109,7 +110,10 @@ export function renderReportTable(reportData) {
  * Логіка для вибору та перегляду існуючих JSON-звітів у CLI.
  */
 export async function handleViewReports() {
-  const reportsDir = path.resolve("test-reports");
+  // Раніше тут був path.resolve("test-reports") — тека залежала від cwd, тож із
+  // будь-якої іншої робочої теки CLI не бачив звітів. Шлях мусить рахуватись від
+  // теки даних, як і в RPC-методах reports.*.
+  const reportsDir = path.join(config.paths.dataDir, "test-reports");
 
   let files = [];
   try {

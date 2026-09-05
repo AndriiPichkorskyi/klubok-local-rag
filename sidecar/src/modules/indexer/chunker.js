@@ -16,7 +16,13 @@ import { config } from "../../config/config.js";
 export function chunkText(text) {
   if (!text) return [];
 
-  const { chunkSize, chunkOverlap } = config.indexer;
+  const { chunkSize } = config.indexer;
+
+  // Перекриття, не менше за розмір чанка, зупиняє рух уперед: i = end - overlap
+  // повертало б нас на місце, і векторизація висіла б назавжди на першому ж
+  // документі. Це помилка конфіга, а не даних, тому просто обмежуємо значення.
+  const chunkOverlap = Math.min(Math.max(0, config.indexer.chunkOverlap || 0), chunkSize - 1);
+
   const chunks = [];
   let i = 0;
 
@@ -41,8 +47,9 @@ export function chunkText(text) {
       chunks.push(chunk);
     }
 
-    i = end - chunkOverlap;
-    if (i < 0) i = 0;
+    // Другий запобіжник: за будь-яких значень крок мусить бути додатним.
+    const next = end - chunkOverlap;
+    i = next > i ? next : i + 1;
     if (end >= text.length) break;
   }
 

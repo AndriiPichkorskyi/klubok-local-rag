@@ -36,3 +36,9 @@ _to_delete/
 .env
 
 *capstoneLibrary
+
+# Бінарник node для бандла (externalBin). Дістається командою з README.
+src-tauri/binaries/
+
+# Артефакти розповсюдження (dmg, архів бази)
+release/

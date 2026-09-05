@@ -11,6 +11,8 @@ import { useSearch } from "./useSearch";
 import ProgressPanel from "./ProgressPanel";
 import ResultView from "./ResultView";
 import ErrorView from "./ErrorView";
+import ReadinessGate from "./ReadinessGate";
+import { useReadiness } from "./useReadiness";
 import "./spotlight.css";
 
 const EXAMPLES = [
@@ -27,6 +29,13 @@ export default function Spotlight() {
 
   const inputRef = useRef(null);
   const { phase, progress, answer, error, askedText, elapsedMs, run, cancel, reset } = useSearch();
+
+  // Модуль 2.1: поки оточення не готове, пошук показувати нема сенсу — він
+  // однаково впаде, і людина побачить помилку RAG замість «запустіть Ollama».
+  // Перевірку можна свідомо пропустити: false negative не мусить замикати вікно.
+  const readiness = useReadiness();
+  const [gateDismissed, setGateDismissed] = useState(false);
+  const gateOpen = !gateDismissed && readiness.phase !== "ready";
 
   // Скільки елементів обходять стрілки: головна картка + альтернативи.
   const itemCount = useMemo(() => {
@@ -137,85 +146,99 @@ export default function Spotlight() {
   return (
     <main className="sp-root" data-phase={phase}>
       <div className="sp-stage">
-        <div className="sp-field">
-          <input
-            ref={inputRef}
-            className="sp-input"
-            type="text"
-            autoFocus
-            spellCheck={false}
-            autoComplete="off"
-            aria-label="Опишіть, що потрібно зробити"
-            placeholder="Що потрібно зробити?"
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              setSelectedIndex(-1);
-            }}
+        {gateOpen ? (
+          <ReadinessGate
+            phase={readiness.phase}
+            report={readiness.report}
+            error={readiness.error}
+            pull={readiness.pull}
+            onRecheck={readiness.check}
+            onPull={readiness.pullModel}
+            onDismiss={() => setGateDismissed(true)}
           />
-        </div>
-
-        {isIdle ? (
+        ) : (
           <>
-            <p className="sp-hint">
-              Опишіть завдання своїми словами — знайдемо програму, яка вже є на цьому Mac.
-              <br />
-              Наприклад:
-            </p>
-            <ul className="sp-examples">
-              {EXAMPLES.map((example) => (
-                <li key={example}>
-                  <button
-                    type="button"
-                    className="sp-example"
-                    onClick={() => {
-                      setText(example);
-                      startSearch(example);
-                    }}
-                  >
-                    {example}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="sp-field">
+              <input
+                ref={inputRef}
+                className="sp-input"
+                type="text"
+                autoFocus
+                spellCheck={false}
+                autoComplete="off"
+                aria-label="Опишіть, що потрібно зробити"
+                placeholder="Що потрібно зробити?"
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setSelectedIndex(-1);
+                }}
+              />
+            </div>
+
+            {isIdle ? (
+              <>
+                <p className="sp-hint">
+                  Опишіть завдання своїми словами — знайдемо програму, яка вже є на цьому Mac.
+                  <br />
+                  Наприклад:
+                </p>
+                <ul className="sp-examples">
+                  {EXAMPLES.map((example) => (
+                    <li key={example}>
+                      <button
+                        type="button"
+                        className="sp-example"
+                        onClick={() => {
+                          setText(example);
+                          startSearch(example);
+                        }}
+                      >
+                        {example}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+
+            {phase === "searching" ? (
+              <ProgressPanel
+                msg={progress.msg}
+                pct={progress.pct}
+                elapsedMs={elapsedMs}
+                onCancel={cancel}
+              />
+            ) : null}
+
+            {phase === "error" ? (
+              <div className="sp-result">
+                <ErrorView error={error} onRetry={() => startSearch(askedText || text)} />
+              </div>
+            ) : null}
+
+            {phase === "done" ? (
+              <ResultView
+                answer={answer}
+                askedText={askedText}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+                stepsOpen={stepsOpen}
+                onToggleSteps={() => setStepsOpen((v) => !v)}
+                openAlts={openAlts}
+                onToggleAlt={toggleAlt}
+                onAskAbout={askAbout}
+              />
+            ) : null}
+
+            {phase === "done" && itemCount > 0 ? (
+              <p className="sp-hint">
+                <kbd>↑</kbd> <kbd>↓</kbd> — рух по результатах, <kbd>Enter</kbd> — розгорнути,{" "}
+                <kbd>Esc</kbd> — очистити
+              </p>
+            ) : null}
           </>
-        ) : null}
-
-        {phase === "searching" ? (
-          <ProgressPanel
-            msg={progress.msg}
-            pct={progress.pct}
-            elapsedMs={elapsedMs}
-            onCancel={cancel}
-          />
-        ) : null}
-
-        {phase === "error" ? (
-          <div className="sp-result">
-            <ErrorView error={error} onRetry={() => startSearch(askedText || text)} />
-          </div>
-        ) : null}
-
-        {phase === "done" ? (
-          <ResultView
-            answer={answer}
-            askedText={askedText}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-            stepsOpen={stepsOpen}
-            onToggleSteps={() => setStepsOpen((v) => !v)}
-            openAlts={openAlts}
-            onToggleAlt={toggleAlt}
-            onAskAbout={askAbout}
-          />
-        ) : null}
-
-        {phase === "done" && itemCount > 0 ? (
-          <p className="sp-hint">
-            <kbd>↑</kbd> <kbd>↓</kbd> — рух по результатах, <kbd>Enter</kbd> — розгорнути,{" "}
-            <kbd>Esc</kbd> — очистити
-          </p>
-        ) : null}
+        )}
       </div>
     </main>
   );

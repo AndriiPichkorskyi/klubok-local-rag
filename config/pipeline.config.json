@@ -1,6 +1,6 @@
 {
   "_опис": "Єдиний конфіг усього проєкта. Читається sidecar/src/config/config.js та Rust-частиною. Змінюйте тут, а не в коді.",
-  "embedModelName": "qwen3-embedding:4b",
+  "embedModelName": "qwen3-embedding:0.6b",
   "embedModels": [
     "qwen3-embedding:0.6b",
     "qwen3-embedding:4b",
@@ -121,7 +121,8 @@
     "enableScreenAnalysis": true,
     "captureMode": "window",
     "_captureMode_варіанти": ["window", "fullscreen"],
-    "screenshotDir": "./sidecar/data/screenshots",
+    "screenshotDir": "data/screenshots",
+    "_screenshotDir_коментар": "Відносний шлях рахується від теки ДАНИХ (типово sidecar/, у зібраному застосунку — ~/Library/Application Support/<identifier>). Так само його резолвить Rust у src-tauri/src/system.rs.",
     "maxStepsPerSession": 12,
     "enabled": true,
     "stepSource": "vision",
@@ -144,7 +145,7 @@
     "_debug_коментар": "Режим розробника: walkthrough.step і walkthrough.stuck додають блок debug (сира відповідь моделі, промпт, кадр, як визначено стан).",
     "journal": true,
     "_journal_коментар": "Журнал сесії на диск: один файл JSONL на сесію з промптами, сирими відповідями моделі, розібраними полями і тривалостями. Це інструмент розбору ПІСЛЯ факту; самі знімки в журнал не потрапляють — лише шляхи до них.",
-    "journalDir": "./sidecar/data/walkthrough-journal",
+    "journalDir": "data/walkthrough-journal",
     "journalKeep": 20,
     "_journalKeep_коментар": "Скільки файлів журналу лишається в теці. Найстаріші прибираються при відкритті нової сесії: це налагодження, а не спосіб забити диск."
   }

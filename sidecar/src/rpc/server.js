@@ -28,6 +28,32 @@ const CLOSE_BAD_TOKEN = 4003;
 /** Автентифіковані сокети — через них ідуть попередження про пам'ять. */
 const clients = new Set();
 
+/**
+ * Перевірка на рукостисканні: з'єднання із заголовком `Origin` не приймаємо.
+ *
+ * WebSocket НЕ обмежений політикою CORS, тому будь-яка сторінка, відкрита в
+ * браузері користувача, може підключитися до ws://127.0.0.1 і — знаючи токен із
+ * конфіга, який лежить у кожній копії застосунку однаковий, — кликати методи,
+ * включно з `db.clear`. Легальні клієнти sidecar (`tokio-tungstenite` у Rust,
+ * термінальні клієнти) заголовка `Origin` не надсилають ніколи, а браузер —
+ * завжди. Отже це найдешевша і найточніша межа між ними.
+ */
+function verifyClient(info, done) {
+  const origin = info.origin || info.req?.headers?.origin;
+  if (origin) {
+    console.warn(`[rpc] Відхилено з'єднання з Origin «${origin}»: це сторінка в браузері.`);
+    logger.event(
+      "warn",
+      "rpc.origin.rejected",
+      { origin },
+      `Відхилено з'єднання з Origin ${origin}`,
+    );
+    done(false, 403, "Origin not allowed");
+    return;
+  }
+  done(true);
+}
+
 /** Безпечно відправляє JSON-об'єкт, якщо сокет ще живий. */
 function send(ws, payload) {
   if (ws.readyState !== ws.OPEN) return;
@@ -302,7 +328,11 @@ async function main() {
   await db.init();
   logger.event("info", "db.init.done", { memory: logger.memorySnapshot() }, "Бази даних готові");
 
-  const wss = new WebSocketServer({ host: config.rpc.host, port: config.rpc.port });
+  const wss = new WebSocketServer({
+    host: config.rpc.host,
+    port: config.rpc.port,
+    verifyClient,
+  });
 
   wss.on("connection", (ws, req) => {
     const peer = req.socket.remoteAddress;
@@ -355,7 +385,14 @@ async function main() {
   });
   wss.on("listening", printStartupBanner);
 
+  // Сигнал зупинки приходить не один раз: SIGINT від Ctrl+C летить усій групі
+  // процесів, SIGTERM надсилає застосунок при виході, а буває й те й те. Без
+  // цього запобіжника кожен із них проходив увесь шлях зупинки — звідси кілька
+  // повідомлень «Зупинка сервера...» і два process.exit() поспіль.
+  let stopping = false;
   const shutdown = () => {
+    if (stopping) return;
+    stopping = true;
     console.log("\n[rpc] Зупинка сервера...");
     logger.event(
       "info",

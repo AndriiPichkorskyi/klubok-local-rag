@@ -1,185 +1,367 @@
-/* Оформлення Spotlight-пошуку. Тільки змінні з src/ui.css, жодних бібліотек. */
+/* Оформлення Spotlight-пошуку. Тільки токени з src/ui.css, жодних бібліотек.
+   Відступи — кратні 8 (сітка з ui.css), радіуси — за призначенням елемента,
+   розміри тексту — з типографічної шкали. Свої числа тут лишились тільки там,
+   де їх диктує саме цей екран (наприклад, позиція поля по вертикалі). */
 
 .sp-root {
   min-height: 100vh;
   /* Знизу вікна — фіксований футер каркаса (~28px). Лишаємо під нього місце. */
-  padding: 0 20px 44px;
+  padding: 0 var(--s6) var(--s12);
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
 /* Порожній стан і пошук: поле по центру. З результатом — плавно йде вгору. */
-.sp-root { padding-top: 30vh; transition: padding-top 220ms ease; }
-.sp-root[data-phase="done"], .sp-root[data-phase="error"] { padding-top: 6vh; }
+.sp-root {
+  padding-top: 28vh;
+  transition: padding-top 220ms ease;
+}
+.sp-root[data-phase="done"],
+.sp-root[data-phase="error"] {
+  padding-top: var(--s8);
+}
 
-.sp-stage { width: 100%; max-width: 720px; }
+.sp-stage {
+  width: 100%;
+  max-width: 720px;
+}
 
 /* ── Поле вводу ─────────────────────────────────────────────── */
-.sp-field { position: relative; }
+.sp-field {
+  position: relative;
+}
 
 .sp-input {
   width: 100%;
-  padding: 14px 16px;
-  font-size: 20px;
-  line-height: 1.4;
+  padding: var(--s4);
+  font-size: 24px;
+  line-height: var(--leading-tight);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
+  border-radius: var(--r-input);
+  background: var(--surface);
   color: var(--fg);
+  box-shadow: var(--shadow-card);
   outline: none;
 }
-.sp-input:focus { border-color: var(--accent); background: var(--bg); }
-.sp-input::placeholder { color: var(--muted); }
+.sp-input:focus {
+  border-color: var(--accent);
+}
+.sp-input::placeholder {
+  color: var(--muted);
+}
 
 .sp-hint {
-  margin: 10px 2px 0;
-  font-size: 13px;
+  margin: var(--s3) var(--s1) 0;
+  font-size: var(--text-caption);
   color: var(--muted);
 }
 .sp-hint kbd {
   font: 11px/1 var(--mono);
-  padding: 2px 5px;
+  padding: 2px var(--s1);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--panel);
+  border-radius: 5px;
+  background: var(--surface);
 }
 .sp-examples {
-  margin: 6px 0 0;
+  margin: var(--s2) 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--s2);
 }
+/* Приклади запитів — третій рівень кнопки: текст у пігулці, без рамки. */
 .sp-example {
-  padding: 4px 10px;
-  font-size: 13px;
-  border-radius: 999px;
+  padding: var(--s1) var(--s3);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: transparent;
   color: var(--muted);
+  border-color: var(--control);
+}
+.sp-example:hover:not(:disabled) {
+  background: var(--control);
+  color: var(--fg);
 }
 
 /* ── Прогрес ────────────────────────────────────────────────── */
-.sp-progress { margin-top: 18px; }
+.sp-progress {
+  margin-top: var(--s6);
+}
 .sp-progress-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--s3);
   justify-content: space-between;
 }
-.sp-progress-msg { font-size: 14px; color: var(--fg); }
-.sp-progress-time { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.sp-progress-msg {
+  font-size: var(--text-body);
+  color: var(--fg);
+}
+.sp-progress-time {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  font-family: var(--mono);
+}
 
 .sp-bar {
-  margin-top: 8px;
+  margin-top: var(--s2);
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--line);
   overflow: hidden;
 }
-.sp-bar-fill { height: 100%; background: var(--accent); transition: width 200ms ease; }
+.sp-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
 /* Невідомий відсоток — «біжуча» смуга, а не завислий екран. */
 .sp-bar-fill.is-indeterminate {
   width: 35%;
   animation: sp-slide 1.3s ease-in-out infinite;
 }
 @keyframes sp-slide {
-  0% { margin-left: -35%; }
-  100% { margin-left: 100%; }
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sp-bar-fill.is-indeterminate { animation: none; width: 100%; opacity: .4; }
-  .sp-root { transition: none; }
+  .sp-bar-fill.is-indeterminate {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+  .sp-root {
+    transition: none;
+  }
 }
 
-.sp-progress-actions { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
-.sp-note { font-size: 12px; color: var(--muted); }
+.sp-progress-actions {
+  margin-top: var(--s4);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+.sp-note {
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
 
 /* ── Результат ──────────────────────────────────────────────── */
-.sp-result { margin-top: 22px; }
+.sp-result {
+  margin-top: var(--s6);
+}
 
 .sp-card {
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  padding: 18px 20px;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  padding: var(--s6);
 }
-.sp-card[data-selected="true"] { border-color: var(--accent); }
+.sp-card[data-selected="true"] {
+  border-color: var(--accent);
+}
 
 .sp-app-name {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--text-title);
+  line-height: var(--leading-tight);
   font-weight: 600;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 .sp-label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: var(--s2);
   font-size: 11px;
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.sp-reason { margin-top: 10px; }
-.sp-reason p:first-child { margin-top: 0; }
-.sp-reason p:last-child { margin-bottom: 0; }
+.sp-reason {
+  margin-top: var(--s3);
+}
+.sp-reason p:first-child {
+  margin-top: 0;
+}
+.sp-reason p:last-child {
+  margin-bottom: 0;
+}
 
-.sp-steps { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
-.sp-steps-body { position: relative; }
+.sp-steps {
+  margin-top: var(--s6);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s4);
+}
+.sp-steps-body {
+  position: relative;
+}
 .sp-steps-body.is-clamped {
   max-height: 260px;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
 }
-.sp-doc-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.sp-doc-title {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-bottom: var(--s2);
+}
 
 /* Типографіка тексту з довідки */
-.sp-md h1, .sp-md h2, .sp-md h3, .sp-md h4 { font-size: 15px; margin: 14px 0 6px; }
-.sp-md p { margin: 8px 0; }
-.sp-md ul, .sp-md ol { margin: 8px 0; padding-left: 22px; }
-.sp-md li { margin: 4px 0; }
-.sp-md img { max-width: 100%; height: auto; }
-.sp-md table { border-collapse: collapse; display: block; overflow-x: auto; }
-.sp-md td, .sp-md th { border: 1px solid var(--line); padding: 4px 8px; }
+.sp-md h1,
+.sp-md h2,
+.sp-md h3,
+.sp-md h4 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  margin: var(--s4) 0 var(--s2);
+}
+.sp-md p {
+  margin: var(--s3) 0;
+}
+.sp-md ul,
+.sp-md ol {
+  margin: var(--s3) 0;
+  padding-left: var(--s6);
+}
+.sp-md li {
+  margin: var(--s1) 0;
+}
+.sp-md img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.sp-md table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.sp-md td,
+.sp-md th {
+  border: 1px solid var(--line);
+  padding: var(--s1) var(--s2);
+}
 
 /* ── Альтернативи ───────────────────────────────────────────── */
-.sp-alts { margin-top: 18px; }
-.sp-alts-title { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
-.sp-alts-list { list-style: none; margin: 0; padding: 0; }
+.sp-alts {
+  margin-top: var(--s6);
+}
+.sp-alts-title {
+  font-size: var(--text-caption);
+  color: var(--muted);
+  margin-bottom: var(--s2);
+}
+.sp-alts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
 
 .sp-alt {
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--r-button);
 }
-.sp-alt[data-selected="true"] { border-color: var(--accent); }
+.sp-alt[data-selected="true"] {
+  border-color: var(--accent);
+}
 
 .sp-alt-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--s2);
   width: 100%;
-  padding: 9px 12px;
+  padding: var(--s3);
   text-align: left;
-  border: 0;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-button);
   background: transparent;
-  font-size: 15px;
+  font-size: var(--text-body);
+  font-weight: 500;
 }
-.sp-alt-head:hover { background: var(--panel); }
-.sp-alt-caret { color: var(--muted); font-size: 11px; width: 12px; flex: none; }
-.sp-alt-body { padding: 0 12px 12px 32px; font-size: 13px; color: var(--muted); }
-.sp-alt-body .sp-note { margin-bottom: 8px; display: block; }
+.sp-alt-head:hover:not(:disabled) {
+  background: var(--control);
+}
+.sp-alt-caret {
+  color: var(--muted);
+  font-size: 11px;
+  width: 12px;
+  flex: none;
+}
+.sp-alt-body {
+  padding: 0 var(--s3) var(--s3) var(--s8);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
+.sp-alt-body .sp-note {
+  margin-bottom: var(--s2);
+  display: block;
+}
 
-/* ── Порожньо / помилка ─────────────────────────────────────── */
-.sp-empty { border: 1px dashed var(--line); border-radius: 12px; padding: 18px 20px; }
-.sp-empty h2 { margin: 0 0 8px; font-size: 17px; }
-.sp-tips { margin: 10px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
-.sp-tips li { margin: 4px 0; }
-.sp-seen { margin-top: 12px; font-size: 12px; color: var(--muted); }
+/* ── Порожньо / готовність / помилка ────────────────────────── */
+.sp-empty {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-card);
+  padding: var(--s6);
+}
+.sp-empty h2 {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-section);
+}
+.sp-tips {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s6);
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.sp-tips li {
+  margin: var(--s1) 0;
+}
+.sp-seen {
+  margin-top: var(--s3);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}
 
-.sp-error { border: 1px solid var(--err); border-radius: 12px; padding: 18px 20px; }
-.sp-error h2 { margin: 0 0 8px; font-size: 17px; color: var(--err); }
-.sp-error p { margin: 0; }
+/* Той самий блок показує і збій пошуку, і екран готовності модуля 2.1, тож
+   рамка нейтральна: кричить лише заголовок. Червона картка на «немає моделі»
+   виглядала б як аварія, а це інструкція. */
+.sp-error {
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  padding: var(--s6);
+}
+.sp-error h2 {
+  margin: 0 0 var(--s2);
+  font-size: var(--text-section);
+  line-height: var(--leading-tight);
+  color: var(--err);
+}
+.sp-error p {
+  margin: 0;
+}
+.sp-error ul {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s6);
+}
+.sp-error li {
+  margin: var(--s2) 0;
+}
 
-.sp-meta { margin-top: 14px; font-size: 12px; color: var(--muted); }
+.sp-meta {
+  margin-top: var(--s4);
+  font-size: var(--text-caption);
+  color: var(--muted);
+}

@@ -7,6 +7,7 @@ import pLimit from "p-limit";
 
 import { db, vectorizedColumnFor } from "../../services/db.service.js";
 import { ollama } from "../../services/ollama.service.js";
+import { logger } from "../../services/logger.service.js";
 import { scraper } from "../../services/scraper.service.js";
 import { scanApplications } from "./scanner.js";
 import fs from "fs/promises";
@@ -688,7 +689,15 @@ async function runFetchLocalDocsLocked(onProgress, signal = null) {
           await db.resetVectorizedFlags([app.id]);
         }
       } catch (err) {
-        // console.error(`Помилка читання ${file}`, err.message);
+        // Раніше тут був порожній catch: відмова диска чи бази виглядала як
+        // успішний прохід, і локальна довідка тихо не зберігалась.
+        onProgress(`[LOCAL] ${app.name}: не вдалося зберегти ${path.basename(file)} — ${err.message}`);
+        logger.event(
+          "warn",
+          "pipeline.localDoc.failed",
+          { app: app.name, file, error: err.message },
+          `Локальна довідка не збережена: ${path.basename(file)}`,
+        );
       }
     }
 

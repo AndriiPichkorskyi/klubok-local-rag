@@ -190,7 +190,9 @@ class ScraperService {
       if (mainContent.length === 0) mainContent = $("body");
 
       mainContent.find([
-        "script", "style", "noscript", "nav", "footer", "header", "aside", 
+        // link — це <link rel="stylesheet"> Apple: у вікні застосунку він тягнув
+        // би їхній CSS поверх наших стилів, та ще й сітьовим запитом.
+        "script", "style", "link", "noscript", "nav", "footer", "header", "aside", 
         "[id*='localnav']", "[class*='localnav']", 
         "[id*='globalnav']", "[class*='globalnav']",
         "[id*='feedback']", "[class*='feedback']", 

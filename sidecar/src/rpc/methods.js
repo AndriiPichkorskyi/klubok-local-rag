@@ -473,7 +473,7 @@ export const methods = {
 
   /** Список файлів у sidecar/test-reports/. */
   async "reports.list"() {
-    const dir = path.join(config.paths.sidecarDir, "test-reports");
+    const dir = path.join(config.paths.dataDir, "test-reports");
     let entries = [];
     try {
       entries = await fs.readdir(dir);
@@ -510,7 +510,7 @@ export const methods = {
       throw new Error(`Недопустиме ім'я звіту «${name}»: очікується файл .json.`);
     }
 
-    const dir = path.join(config.paths.sidecarDir, "test-reports");
+    const dir = path.join(config.paths.dataDir, "test-reports");
     const file = path.join(dir, name);
     // Подвійний запобіжник: після склеювання шлях мусить лишитись усередині теки.
     if (path.dirname(path.resolve(file)) !== path.resolve(dir)) {

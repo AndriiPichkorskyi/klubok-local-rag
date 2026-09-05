@@ -97,7 +97,7 @@ function legacyVectorizedColumnFor(modelName) {
 
 /** Шлях до теки LanceDB конкретної моделі — те саме правило, що в config.js. */
 export function lancedbPathFor(modelName) {
-  return path.join(config.paths.sidecarDir, `lancedb_data_${String(modelName).replace(":", "_")}`);
+  return path.join(config.paths.dataDir, `lancedb_data_${String(modelName).replace(":", "_")}`);
 }
 
 class DbService {
@@ -939,7 +939,7 @@ class DbService {
 
     let entries = [];
     try {
-      entries = await fs.readdir(config.paths.sidecarDir, { withFileTypes: true });
+      entries = await fs.readdir(config.paths.dataDir, { withFileTypes: true });
     } catch {
       return [...candidates.values()];
     }
@@ -952,7 +952,7 @@ class DbService {
       const model = exact?.model || this.modelFromLancedbDir(entry.name);
       candidates.set(model, {
         model,
-        dir: path.join(config.paths.sidecarDir, entry.name),
+        dir: path.join(config.paths.dataDir, entry.name),
         discoveredOnDisk: true,
       });
     }

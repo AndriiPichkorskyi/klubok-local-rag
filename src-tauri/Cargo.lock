@@ -2070,6 +2070,7 @@ dependencies = [
  "core-foundation",
  "core-graphics",
  "futures-util",
+ "libc",
  "serde",
  "serde_json",
  "sysinfo",

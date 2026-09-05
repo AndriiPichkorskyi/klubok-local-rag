@@ -188,7 +188,7 @@ export async function runRagTests(onProgress = () => {}, options = {}) {
     // Звіт пишемо на диск ПОСТУПОВО. Раніше всі 12 режимів × усі кейси
     // лежали в пам'яті до останнього рядка, і лише потім JSON.stringify
     // робив із них рядок на ≈2 МБ. Тепер у пам'яті лишаються самі підсумки.
-    const reportsDir = path.join(config.paths.sidecarDir, "test-reports");
+    const reportsDir = path.join(config.paths.dataDir, "test-reports");
     await fs.mkdir(reportsDir, { recursive: true });
     const dateStr = new Date().toISOString().replace(/[:.]/g, "-");
     const reportName =

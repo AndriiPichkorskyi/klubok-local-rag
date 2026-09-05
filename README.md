@@ -1,7 +1,99 @@
-# Tauri + React
+# Klubok
 
-This template should help get you started developing with Tauri and React in Vite.
+Локальний помічник, який за описом задачі природною мовою знаходить **уже
+встановлену** на цьому Mac програму і показує, як нею скористатися. Усе працює
+офлайн: пошук по документації і генерація відповіді йдуть через локальну Ollama,
+жоден запит не покидає комп'ютер.
 
-## Recommended IDE Setup
+Назва — від чарівного клубочка, який сам котиться і показує шлях.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Вимоги
+
+| Що | Деталі |
+|---|---|
+| macOS 11+ | лише **Apple Silicon** (M1 і новіші): у бандл входять нативні модулі під arm64 |
+| [Ollama](https://ollama.com) | застосунок сам перевіряє її наявність і пропонує завантажити моделі |
+| Моделі | `qwen3:1.7b` (відповіді) і `qwen3-embedding:0.6b` (вектори) — разом ≈1.5 ГБ |
+| Місце | ≈350 МБ застосунок + ≈350 МБ база знань |
+
+Ollama і моделі в застосунок не входять свідомо: це десятки гігабайтів, і
+кожен ставить їх собі сам.
+
+## Встановлення
+
+1. Відкрити `Klubok.dmg` і перетягнути **Klubok** у теку «Програми».
+2. Зняти карантин — інакше macOS відмовиться запускати:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Klubok.app
+   ```
+
+   Причина: застосунок підписаний самопідписаним сертифікатом, без нотаризації
+   Apple (вона вимагає платного акаунта розробника). Альтернатива команді —
+   правий клік на застосунку → «Відкрити» → «Все одно відкрити».
+3. Розпакувати базу знань у теку даних застосунку:
+
+   ```bash
+   mkdir -p "$HOME/Library/Application Support/com.andriipichkorskiy.local-tool-rag-assistant"
+   tar -xzf klubok-data.tar.gz -C "$HOME/Library/Application Support/com.andriipichkorskiy.local-tool-rag-assistant"
+   ```
+
+   Без цього кроку застосунок працює, але спершу мусить сам просканувати
+   програми, завантажити довідку і побудувати вектори — це години.
+
+## Перший запуск
+
+Якщо Ollama не запущена або бракує моделей, застосунок не робить вигляд, що все
+гаразд: замість поля пошуку показує, що саме зробити, і вміє завантажити
+відсутню модель сам (модуль первинної ініціалізації, `bootstrap.check`).
+
+Далі — опишіть задачу своїми словами: «як зробити запис екрана», «як обрізати
+відео». У відповіді буде рекомендована програма, альтернативи і кроки з її
+довідки.
+
+**Покрокове ведення** (підказки поверх екрана) додатково просить дозвіл
+«Запис екрана»: Системні параметри → Приватність і безпека → Запис екрана →
+додати **Klubok**, після чого застосунок треба перезапустити.
+
+## Де що лежить
+
+```
+/Applications/Klubok.app                     код: свій Node, модулі, фронтенд
+~/Library/Application Support/com.andriipichkorskiy.local-tool-rag-assistant/
+├── config/pipeline.config.json              налаштування (можна правити)
+├── rag_metadata.sqlite                      метадані програм і FTS-індекс
+├── lancedb_data_qwen3-embedding_0.6b/       вектори
+├── logs/                                    журнали (якщо logging.enabled)
+└── data/                                    знімки екрана і журнал ведення
+```
+
+Ідентифікатор теки історичний (`local-tool-rag-assistant`) — його не змінювали,
+щоб не загубити вже створені бази.
+
+## Розробка
+
+```bash
+npm install && npm run sidecar:install
+npm run sidecar:dev       # backend окремо, з автоперезапуском
+npm run app               # застосунок, sidecar запускає Tauri
+npm run app:external      # застосунок + sidecar, яким керуєш сам
+npm run tauri build       # .app і .dmg (потрібен src-tauri/binaries/node-*)
+```
+
+Бінарник Node для бандла в git не тримається — дістати перед збіркою:
+
+```bash
+curl -fL -o /tmp/node24.tar.gz https://nodejs.org/dist/v24.7.0/node-v24.7.0-darwin-arm64.tar.gz
+tar -xzf /tmp/node24.tar.gz -C /tmp
+mkdir -p src-tauri/binaries
+cp /tmp/node-v24.7.0-darwin-arm64/bin/node src-tauri/binaries/node-aarch64-apple-darwin
+```
+
+Скрипти: `scripts/seed-data.sh` кладе наявну базу в теку даних застосунку
+(`--link` — посиланнями, для розробки), `scripts/export-seed.sh` збирає архів
+бази для розповсюдження — сирі сторінки довідки він замінює на витягнуті статті
+(`sidecar/src/cli/compact-raw-html.js`), тому архів важить десятки мегабайтів
+замість гігабайтів без утрати того, що видно на видачі.
+
+Карта проєкта і правила — `AGENTS.md`; протокол Rust ↔ Node —
+`docs/contracts/rpc.md`; відомі баги — `docs/improvements.md`.
