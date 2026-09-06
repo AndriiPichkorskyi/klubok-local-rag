@@ -1,0 +1,8 @@
+comparison_id,language,query,expected_app,failed_modes,total_modes,retrieval_hit_modes,most_frequent_output,most_frequent_output_count,diagnosis
+external-04,uk,"Скільки буде 28 помножити на 14?","Calculator",36,36,0,"NOT_FOUND",26,retrieval_or_data
+external-06,uk,"Стисни ці файли в ZIP-архів","Archive Utility | macOS System",36,36,0,"NOT_FOUND",32,retrieval_or_data
+external-12,en,"Sketch ideas together on an infinite canvas","Freeform",36,36,0,"NOT_FOUND",32,retrieval_or_data
+external-12,uk,"Хочу разом малювати ідеї на нескінченному полотні","Freeform",36,36,0,"NOT_FOUND",15,retrieval_or_data
+external-15,uk,"Почни відеодзвінок із другом","FaceTime | zoom.us",36,36,0,"NOT_FOUND",28,retrieval_or_data
+external-17,en,"Add a dentist appointment to next Tuesday","Calendar",36,36,0,"NOT_FOUND",33,retrieval_or_data
+external-17,uk,"Додай візит до стоматолога на наступний вівторок","Calendar",36,36,0,"NOT_FOUND",32,retrieval_or_data

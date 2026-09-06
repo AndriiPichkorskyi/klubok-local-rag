@@ -1,0 +1,13 @@
+chat_model,embedding_model,applied_pass_count,applied_total,applied_pass_rate_percent,retrieval_hit_count,retrieval_recall_percent,selection_given_retrieval_percent,avg_time_seconds
+gemma3:270m,qwen3-embedding:4b,0,186,0.00,153,82.26,0.00,0.63
+gemma3:270m,qwen3-embedding:0.6b,0,186,0.00,144,77.42,0.00,0.60
+gemma3:270m,nomic-embed-text:latest,0,186,0.00,75,40.32,0.00,0.51
+qwen3:0.6b,qwen3-embedding:4b,8,186,4.30,153,82.26,5.23,3.28
+qwen3:0.6b,qwen3-embedding:0.6b,9,186,4.84,144,77.42,6.25,3.43
+qwen3:0.6b,nomic-embed-text:latest,3,186,1.61,75,40.32,4.00,3.32
+gemma3:1b,qwen3-embedding:4b,19,186,10.22,153,82.26,12.42,2.05
+gemma3:1b,qwen3-embedding:0.6b,24,186,12.90,144,77.42,16.67,1.80
+gemma3:1b,nomic-embed-text:latest,12,186,6.45,75,40.32,16.00,1.98
+qwen3:1.7b,qwen3-embedding:4b,119,186,63.98,153,82.26,77.78,7.86
+qwen3:1.7b,qwen3-embedding:0.6b,95,186,51.08,144,77.42,65.97,8.06
+qwen3:1.7b,nomic-embed-text:latest,47,186,25.27,75,40.32,62.67,7.12

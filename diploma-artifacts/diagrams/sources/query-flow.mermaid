@@ -1,0 +1,63 @@
+flowchart TD
+    A["Користувач вводить запит\nCommandPalette"] --> UI0["Indeterminate pending state\nelapsed time + process block + progressbar\ninput редагується; submit disabled\nбез fake percentage"]
+    UI0 --> B["IPC: get_recommendations_for_query\nasync command + spawn_blocking\ncommands/mod.rs"]
+    B --> C["Нормалізація запиту\nquery_normalization::normalize_query"]
+
+    C --> OA{"Явний open-app запит?\nexact local inventory match\nбез fuzzy"}
+    OA -->|"Так"| OC["application_open_intent\ninstalled / localAlternative / unavailable"]
+    OC --> AG
+
+    OA -->|"Ні"| EMB(["Ембеддинг запиту — ОДИН РАЗ\nOllama /api/embed\nвектор передається в усі канали"])
+
+    KW["Keyword Fast Path\nkeyword_intent_engine::classify\n0 мс, 120/120 на seeded corpus\nрезультат = ОЗНАКА ранжування,\nне гілка й не вердикт"] -.-> AA
+    C --> KW
+
+    EMB --> O["ОДИН гібридний пошук на запит\nhybrid_retrieval::hybrid_retrieve\nЄДИНИЙ скорер"]
+
+    HM[("application_metadata\nHPDHelpProjectIdentifier = exact guide slug")] --> DC
+    DC[("documentation_topics\nlocal titles + consented background Apple TOC")] --> P
+
+    O --> P[("Лексика документів FTS5\ndocument_chunks_fts + application_metadata_fts\n+ catalog-only documentation_topics_fts")]
+    O --> Q(["Вектори чанків\nтой самий вектор запиту · dot product"])
+    O --> R["Лексика capability\ncapabilities_fts"]
+    O --> R2(["Вектори capability\nтой самий вектор запиту"])
+    XG["Evidence-role gate тут, а не в resolver:\nexpand_capability_matches_to_applications\ncapability_application_declaration не допускає\nі не маркує кандидата на жодному запиті"] -.-> R
+    XG -.-> R2
+
+    P --> S["RRF злиття k=60\nкожен канал за relevance floor"]
+    Q --> S
+    R --> S
+    R2 --> S
+
+    S --> X["Candidate resolver читає ЦЕЙ outcome\ncandidate_resolution\nвласного пошуку не запускає"]
+    X --> AA["Детерміноване ранжування\nrecommendation_ranking\nознаки: сила evidence, system/native,\nlaunch availability, capability agreement"]
+
+    AA --> Y{"Є допустимі локальні кандидати?"}
+    Y -->|"Ні"| Z["status = NoLocalEvidence\nrejection_reason зберігає точну причину"]
+    Y -->|"Так"| AC["Детерміноване пояснення\nrecommendation_explanation"]
+    AC --> AD["status = Answered\nпереможець = primary application"]
+
+    AD --> AE["Evidence bundle з ТОГО САМОГО outcome\nбез повторного retrieval §4.6"]
+    Z --> AE
+
+    AE --> AL{"Length gate ≥ 50 символів?"}
+    AL -->|"Ні"| OD(["Офіційна документація Apple\nза consent, on demand\nне більш як 1 стаття"])
+    OD --> AL2{"Тепер достатньо?"}
+    AL2 -->|"Ні"| AU2["grounded_evidence_after_attempt"]
+    AL2 -->|"Так"| AT
+    AL -->|"Так"| AT{"Topic-compatibility gate\nquery ↔ evidence, у коді\nне лише step → evidence"}
+    AT -->|"Ні"| AU["grounded_topic_mismatch\nкроків немає; рекомендація лишається"]
+    AT -->|"Так"| AV(["Генерація кроків\nлокальна модель, лише з цього evidence"])
+    ORD["Порядок саме такий, і це виміряно:\ntopic gate ПІСЛЯ length gate і fetch.\nЯкщо поставити його першим, кожен запит стає\ngrounded_topic_mismatch — anchor, що допускає\nаудіо-кейс, приходить із ЗАВАНТАЖЕНОЇ статті"] -.-> AT
+    AV --> AW["Grounding verification у коді\nunsupported steps відкидаються\norigin кожного кроку виводиться, не з моделі"]
+
+    AU --> AG
+    AU2 --> AG
+    AW --> AG
+
+    AG["ОДИН RecommendationPipelineResult\n→ IPC → Frontend"]
+    AG --> UI1["Один людський вердикт\nбез presentation-priority драбини:\nпереможець + пояснення + (кроки, якщо є)\n+ джерело Apple, якщо origin = Network"]
+
+    PU[["Provider unavailable:\nвекторні канали не відпрацювали →\nстатус каже про деградацію покриття,\nне про відсутність доказів"]] -.-> AG
+
+    RM["ВИДАЛЕНО з цього потоку:\nresolve_intent як маршрутизатор ·\nshortlist resolver на intent-шляху ·\nrecommendation_conflicts_with_retrieval ·\nintent_confident як veto ·\n2 з 3 ембеддингів запиту"]

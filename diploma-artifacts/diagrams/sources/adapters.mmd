@@ -1,0 +1,33 @@
+graph TD
+    subgraph Legend [Легенда]
+        direction LR
+        L1[Ядро Sidecar]
+        L2[Абстракція Platform]
+        L3[Специфічні Адаптери]
+        L4[Виклики ОС]
+    end
+
+    Sidecar[Основна логіка сканування] --> Platform[sidecar/src/platform/index.js]
+    
+    subgraph PlatformLayer [Адаптери ОС]
+        Platform -- "darwin" --> Mac[macos.js]
+        Platform -- "win32" --> Win["windows.js (Заглушка)"]
+        Platform -- "linux" --> Lin["linux.js (Заглушка)"]
+    end
+    
+    subgraph MacOS [macOS Реалізація]
+        Mac --> Open[open - запуск програм]
+        Mac --> Sips[sips - зміна розміру зображень]
+        Mac -.-> Plutil["plutil - парсинг Info.plist (через scanner.js)"]
+    end
+    
+    classDef core fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
+    classDef abstract fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
+    classDef adapter fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+    classDef os fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
+
+    class Sidecar,L1 core;
+    class Platform,L2 abstract;
+    class Mac,Win,Lin,L3 adapter;
+    class Open,Sips,Plutil,L4 os;
+    classDef default color:#333333;

@@ -1,0 +1,50 @@
+graph TD
+    subgraph Legend [Легенда]
+        direction LR
+        L1[Rust/Tauri]
+        L2["Sidecar / Node.js"]
+        L3["Ollama / LLM"]
+        L4[Інтерфейс користувача]
+    end
+
+    Start([Користувач запускає підказку]) --> TauriSpawn
+    
+    subgraph TauriSide ["Етап 1: Системний рівень (Rust)"]
+        TauriSpawn[Створення прозорого вікна поверх екрана] --> Capture["Захват екрана (Screenshot)"]
+        Capture --> SaveTemp[Збереження знімка в temp-теку]
+    end
+    
+    SaveTemp -- WebSocket --> NodeStart
+    
+    subgraph NodeSide ["Етап 2: Логіка ведення (Node.js)"]
+        NodeStart["walkthrough.step / start"] --> Resize[Зменшення зображення для LLM]
+        Resize --> PromptForm[Формування промпта з метою]
+    end
+    
+    PromptForm --> OllamaVision
+    
+    subgraph LLM ["Етап 3: Аналіз зображення"]
+        OllamaVision["Модель qwen2.5vl:3b аналізує інтерфейс"]
+        OllamaVision --> Parse[Пошук елемента за координатами]
+    end
+    
+    Parse -- WebSocket --> TauriOverlay
+    
+    subgraph UI ["Етап 4: Оверлей"]
+        TauriOverlay["Відображення рамки/вказівника на екрані"]
+        TauriOverlay --> WaitUser[Очікування дій користувача]
+    end
+    
+    WaitUser --> Capture
+    WaitUser -- Завершення --> NodeFinish["walkthrough.finish: Очищення temp"]
+
+    classDef rust fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
+    classDef node fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
+    classDef llm fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+    classDef ui fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
+
+    class TauriSpawn,Capture,SaveTemp,L1 rust;
+    class NodeStart,Resize,PromptForm,NodeFinish,L2 node;
+    class OllamaVision,Parse,L3 llm;
+    class TauriOverlay,WaitUser,L4 ui;
+    classDef default color:#333333;
