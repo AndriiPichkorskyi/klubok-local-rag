@@ -9,19 +9,19 @@
 
 /** Кроки пайплайна в тому ж порядку, що й у CLI та в pipeline.fullSync. */
 export const PIPELINE_STEPS = [
-  { id: "scan", method: "pipeline.scanApps", label: "Сканування програм" },
-  { id: "web", method: "pipeline.fetchDocs", label: "Веб-довідка" },
-  { id: "local", method: "pipeline.fetchLocalDocs", label: "Локальна довідка" },
+  { id: "scan", method: "pipeline.scanApps", labelKey: "fullRun.steps.scan" },
+  { id: "web", method: "pipeline.fetchDocs", labelKey: "fullRun.steps.web" },
+  { id: "local", method: "pipeline.fetchLocalDocs", labelKey: "fullRun.steps.local" },
   {
     id: "keywords",
     method: "pipeline.keywordAugmentation",
-    label: "Наміри (keywords)",
+    labelKey: "fullRun.steps.keywords",
   },
-  { id: "vectors", method: "pipeline.vectorize", label: "Вектори" },
+  { id: "vectors", method: "pipeline.vectorize", labelKey: "fullRun.steps.vectors" },
   {
     id: "intentVectors",
     method: "pipeline.vectorizeIntents",
-    label: "Вектори намірів",
+    labelKey: "fullRun.steps.intentVectors",
   },
 ];
 
@@ -31,11 +31,11 @@ export const PIPELINE_STEPS = [
  * (скільки режимів і скільки це триватиме) і своє попередження про maxModes.
  */
 export const TEST_STEPS = [
-  { id: "ragTests", method: "tests.run", label: "RAG-бенчмарк", kind: "rag" },
+  { id: "ragTests", method: "tests.run", labelKey: "fullRun.steps.rag", kind: "rag" },
   {
     id: "externalTests",
     method: "tests.runExternal",
-    label: "EXTERNAL-тести",
+    labelKey: "fullRun.steps.external",
     kind: "external",
   },
 ];
@@ -69,8 +69,8 @@ function vectorSteps(models, configModel) {
         method: "pipeline.vectorize",
         params: {},
         label: configModel
-          ? `Вектори · ${configModel} (з конфіга)`
-          : "Вектори · модель з конфіга",
+          ? dt("fullRun.vectorsConfig", { model: configModel })
+          : dt("fullRun.vectorsDefault"),
       },
     ];
   }
@@ -81,7 +81,7 @@ function vectorSteps(models, configModel) {
       key: "full:vectors",
       method: "pipeline.vectorize",
       params: {},
-      label: `Вектори · ${configModel}`,
+      label: `${dt("fullRun.steps.vectors")} · ${configModel}`,
     });
   }
 
@@ -91,8 +91,8 @@ function vectorSteps(models, configModel) {
       key: "full:vectors-foreign",
       method: "pipeline.fullSync",
       params: { models: foreign },
-      label: `Вектори · ${foreign.join(", ")}`,
-      warn: "Ці моделі векторизуються окремим процесом, який повторює кроки 1–4 — крок буде довшим.",
+      label: `${dt("fullRun.steps.vectors")} · ${foreign.join(", ")}`,
+      warn: dt("fullRun.foreignWarning"),
     });
   }
   return steps;
@@ -126,7 +126,7 @@ export function buildPlan(
       key: `full:${step.id}`,
       method: step.method,
       params: {},
-      label: step.label,
+      label: dt(step.labelKey),
     });
   }
 
@@ -150,7 +150,8 @@ export function buildPlan(
         if (chat) params.overrideChatModel = chat;
         if (embed) params.overrideEmbedModel = embed;
         const modelLabel = [embed, chat].filter(Boolean).join(" · ");
-        const label = modelLabel ? `${step.label} · ${modelLabel}` : step.label;
+        const stepLabel = dt(step.labelKey);
+        const label = modelLabel ? `${stepLabel} · ${modelLabel}` : stepLabel;
         plan.push({
           key: `full:${step.id}:${embed || "config"}:${chat || "config"}`,
           method: step.method,
@@ -174,40 +175,40 @@ export function describeStepResult(method, result) {
   switch (method) {
     case "pipeline.scanApps":
       if (num(result.newApps) !== undefined)
-        lines.push(`нових: ${result.newApps}`);
+        lines.push(dt("fullRun.results.new", { count: result.newApps }));
       break;
     case "pipeline.fetchDocs":
     case "pipeline.fetchLocalDocs":
       if (num(result.docsCount) !== undefined)
-        lines.push(`документів: ${result.docsCount}`);
-      if (result.mbDownloaded) lines.push(`${result.mbDownloaded} МБ`);
+        lines.push(dt("fullRun.results.documents", { count: result.docsCount }));
+      if (result.mbDownloaded) lines.push(`${result.mbDownloaded} MB`);
       break;
     case "pipeline.keywordAugmentation":
       if (num(result.generated) !== undefined)
-        lines.push(`згенеровано: ${result.generated}`);
+        lines.push(dt("fullRun.results.generated", { count: result.generated }));
       break;
     case "pipeline.vectorize":
     case "pipeline.vectorizeIntents":
       if (num(result.chunks) !== undefined)
-        lines.push(`чанків: ${result.chunks}`);
+        lines.push(dt("fullRun.results.chunks", { count: result.chunks }));
       break;
     case "pipeline.fullSync":
       if (result.stoppedAt)
-        lines.push(`спинився на кроці: ${result.stoppedAt}`);
+        lines.push(dt("fullRun.results.stoppedAt", { step: result.stoppedAt }));
       if (num(result.newApps) !== undefined)
-        lines.push(`нових програм: ${result.newApps}`);
+        lines.push(dt("fullRun.results.newApps", { count: result.newApps }));
       if (num(result.docsCount) !== undefined)
-        lines.push(`документів: ${result.docsCount}`);
+        lines.push(dt("fullRun.results.documents", { count: result.docsCount }));
       if (num(result.generated) !== undefined)
-        lines.push(`намірів: ${result.generated}`);
+        lines.push(dt("fullRun.results.intents", { count: result.generated }));
       if (result.perModel && typeof result.perModel === "object") {
         for (const [model, value] of Object.entries(result.perModel)) {
           const text =
             value === "done"
-              ? "виконано окремим процесом"
+              ? dt("fullRun.results.separateDone")
               : value === "cancelled"
-                ? "зупинено — модель НЕ векторизовано"
-                : `${value} чанків`;
+                ? dt("fullRun.results.notVectorized")
+                : dt("fullRun.results.chunks", { count: value });
           lines.push(`• ${model}: ${text}`);
         }
       }
@@ -217,11 +218,11 @@ export function describeStepResult(method, result) {
       const passed = num(result.passed);
       const total = num(result.totalCases);
       if (passed !== undefined && total !== undefined)
-        lines.push(`пройдено ${passed} з ${total}`);
+        lines.push(dt("tests.passed", { passed, total }));
       if (num(result.failed) !== undefined)
-        lines.push(`провалено ${result.failed}`);
+        lines.push(dt("tests.failed", { count: result.failed }));
       if (num(result.passRate) !== undefined) lines.push(`${result.passRate}%`);
-      if (result.reportPath) lines.push(`звіт: ${result.reportPath}`);
+      if (result.reportPath) lines.push(dt("fullRun.results.report", { path: result.reportPath }));
       break;
     }
     default:
@@ -232,7 +233,7 @@ export function describeStepResult(method, result) {
     const plain = Object.entries(result)
       .filter(([, value]) => value === null || typeof value !== "object")
       .map(([key, value]) => `${key}=${value}`);
-    return plain.length > 0 ? plain : ["готово"];
+    return plain.length > 0 ? plain : [dt("common.ready")];
   }
   return lines;
 }
@@ -247,3 +248,4 @@ export function testsFailed(method, result) {
   }
   return false;
 }
+import { dt } from "./i18n";

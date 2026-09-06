@@ -13,6 +13,7 @@ import { formatBytes, formatDateTime } from "./format";
 import { summarizeReport } from "./reportAnalytics";
 
 import Checkbox from "./Checkbox";
+import { dt } from "./i18n";
 
 const ReportComparison = lazy(() => import("./ReportComparison"));
 
@@ -27,18 +28,18 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
   const [compareSelected, setCompareSelected] = useState([]);
 
   const loadList = () =>
-    run("reports.list", "Список звітів", (ref) => rpc("reports.list", {}, ref));
+    run("reports.list", dt("reports.listOperation"), (ref) => rpc("reports.list", {}, ref));
 
   // Список оновлюємо на монтуванні і після кожного прогону тестів.
   useEffect(() => {
-    run("reports.list", "Список звітів", (ref) => rpc("reports.list", {}, ref));
+    run("reports.list", dt("reports.listOperation"), (ref) => rpc("reports.list", {}, ref));
   }, [run, refreshKey]);
 
   /** Клік по рядку — читаємо звіт. Поки читається попередній, кліки ігноруємо. */
   const openReport = (name) => {
     if (readOp.running) return;
     setSelected(name);
-    run("reports.read", `Звіт ${name}`, (ref) =>
+    run("reports.read", dt("reports.reportOperation", { name }), (ref) =>
       rpc("reports.read", { name }, ref),
     );
   };
@@ -56,7 +57,7 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
 
   const compareReports = () => {
     const names = [...compareSelected];
-    run("reports.compare", `Порівняння ${names.length} звітів`, async (ref) => {
+    run("reports.compare", dt("reports.compareOperation", { count: names.length }), async (ref) => {
       const items = [];
       for (const [index, name] of names.entries()) {
         const value = await rpc(
@@ -72,18 +73,18 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
 
   return (
     <Section
-      title="Звіти тестування"
+      title={dt("reports.title")}
       hint={dir}
       actions={
         <button type="button" onClick={loadList} disabled={listOp.running}>
-          {listOp.running ? "Оновлення…" : "Оновити"}
+          {dt(listOp.running ? "reports.updating" : "reports.refresh")}
         </button>
       }
     >
       {listOp.error ? <div className="dp-alert">{listOp.error}</div> : null}
 
       {reports.length === 0 && !listOp.running ? (
-        <div className="muted dp-small">Жодного JSON-звіту не знайдено.</div>
+        <div className="muted dp-small">{dt("reports.empty")}</div>
       ) : (
         <div
           className="dp-scroll-x"
@@ -92,10 +93,8 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
           <table className="dp-table">
             <thead>
               <tr>
-                <th title="Додати до порівняння">✓</th>
-                <th>Файл</th>
-                <th>Розмір</th>
-                <th>Змінено</th>
+                <th title={dt("reports.addCompare")}>✓</th>
+                <th>{dt("reports.file")}</th><th>{dt("reports.size")}</th><th>{dt("reports.modified")}</th>
               </tr>
             </thead>
             <tbody>
@@ -122,15 +121,15 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
                   }}
                   title={
                     readOp.running
-                      ? "Зачекайте: читається попередній звіт"
-                      : "Показати таблицею"
+                      ? dt("reports.waitRead")
+                      : dt("reports.showTable")
                   }
                 >
                   <td onClick={(event) => event.stopPropagation()}>
                     <Checkbox
                       className="dp-report-checkbox"
                       type="checkbox"
-                      aria-label={`Порівнювати ${report.name}`}
+                      aria-label={dt("reports.compareAria", { name: report.name })}
                       checked={compareSelected.includes(report.name)}
                       onChange={() => toggleComparison(report.name)}
                     />
@@ -153,14 +152,14 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
               setCompareSelected(reports.map((report) => report.name))
             }
           >
-            Обрати всі
+            {dt("reports.selectAll")}
           </button>
           <button
             type="button"
             onClick={() => setCompareSelected([])}
             disabled={compareSelected.length === 0}
           >
-            Очистити вибір
+            {dt("reports.clearSelection")}
           </button>
           <button
             type="button"
@@ -168,11 +167,11 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
             disabled={compareSelected.length < 2 || compareOp.running}
           >
             {compareOp.running
-              ? "Порівняння…"
-              : `Порівняти (${compareSelected.length})`}
+              ? dt("reports.comparing")
+              : dt("reports.compare", { count: compareSelected.length })}
           </button>
           <span className="muted dp-small">
-            Для matrix моделей оберіть звіти однакового тестового набору й осей.
+            {dt("reports.matrixHint")}
           </span>
         </div>
       ) : null}
@@ -183,7 +182,7 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
       {Array.isArray(compareOp.result?.items) &&
       compareOp.result.items.length > 0 ? (
         <Suspense
-          fallback={<div className="muted dp-small">Готую порівняння…</div>}
+          fallback={<div className="muted dp-small">{dt("reports.preparing")}</div>}
         >
           <ReportComparison items={compareOp.result.items} />
         </Suspense>
@@ -193,18 +192,18 @@ export default function ReportsSection({ ops, run, cancelOp, refreshKey }) {
         <div className="dp-op">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <span className="dp-small">
-              Обрано: <code>{selected}</code>
+              {dt("reports.selected")} <code>{selected}</code>
             </span>
             <button type="button" onClick={() => setSelected(null)}>
-              Закрити
+              {dt("reports.close")}
             </button>
           </div>
 
           <OpButton
             op={readOp}
-            label={`Перечитати ${selected} (reports.read)`}
+            label={dt("reports.reread", { name: selected })}
             onClick={() =>
-              run("reports.read", `Звіт ${selected}`, (ref) =>
+              run("reports.read", dt("reports.reportOperation", { name: selected }), (ref) =>
                 rpc("reports.read", { name: selected }, ref),
               )
             }

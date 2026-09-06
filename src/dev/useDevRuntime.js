@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onProgress, newRef, jobCancel, testsPause, testsResume } from "../ipc";
 import { errorText, summarizeResult } from "./format";
+import { dt } from "./i18n";
 
 /**
  * Скільки рядків журналу тримаємо в пам'яті.
@@ -154,7 +155,7 @@ export function useDevRuntime() {
         testConcurrency: null,
         controlReason: null,
       });
-      appendLog({ source: label, text: "старт", level: "start" });
+      appendLog({ source: label, text: dt("runtime.start"), level: "start" });
 
       const finish = (patch, logText, level) => {
         refToKeyRef.current.delete(ref);
@@ -182,7 +183,7 @@ export function useDevRuntime() {
           const stopped = Boolean(result && typeof result === "object" && result.cancelled === true);
           finish(
             { result, error: null, status: stopped ? "cancelled" : "done" },
-            `${stopped ? "зупинено користувачем" : "готово"} · ${summarizeResult(result)}`,
+            `${dt(stopped ? "runtime.stopped" : "runtime.done")} · ${summarizeResult(result)}`,
             stopped ? "info" : "done",
           );
           return { ok: true, result, error: null, cancelled: stopped };
@@ -197,7 +198,7 @@ export function useDevRuntime() {
             cancelled
               ? { result: undefined, error: null, status: "cancelled", cancelledText: text }
               : { result: undefined, error: text, status: "error" },
-            cancelled ? `зупинено користувачем: ${text}` : `помилка: ${text}`,
+            cancelled ? `${dt("runtime.stopped")}: ${text}` : dt("runtime.error", { error: text }),
             cancelled ? "info" : "error",
           );
           return { ok: false, result: undefined, error: text, cancelled };
@@ -216,35 +217,35 @@ export function useDevRuntime() {
   const cancelOp = useCallback(
     async (key) => {
       const op = opsRef.current[key];
-      if (!op?.running) return { cancelled: false, reason: "операція вже не виконується" };
+      if (!op?.running) return { cancelled: false, reason: dt("runtime.alreadyStopped") };
 
       const source = op.label || key;
       patchOp(key, { cancelRequested: true, cancelling: true });
 
       if (typeof op.rpcId !== "number") {
-        const reason = "серверний id ще невідомий — не було жодної події прогресу";
+        const reason = dt("runtime.noServerId");
         patchOp(key, { cancelling: false, cancelAck: false, cancelReason: reason });
-        appendLog({ source, text: `зупинити не вдалося: ${reason}`, level: "error" });
+        appendLog({ source, text: dt("runtime.stopFailed", { reason }), level: "error" });
         return { cancelled: false, reason };
       }
 
       try {
         const result = await jobCancel(op.rpcId);
         const ack = Boolean(result?.cancelled);
-        const reason = result?.reason || (ack ? "" : "бекенд не підтвердив скасування");
+        const reason = result?.reason || (ack ? "" : dt("runtime.cancelNotConfirmed"));
         patchOp(key, { cancelling: false, cancelAck: ack, cancelReason: reason });
         appendLog({
           source,
           text: ack
-            ? `скасування прийнято бекендом (id ${op.rpcId})`
-            : `зупинити не вдалося (id ${op.rpcId}): ${reason}`,
+            ? dt("runtime.cancelAccepted", { id: op.rpcId })
+            : dt("runtime.stopFailedId", { id: op.rpcId, reason }),
           level: ack ? "info" : "error",
         });
         return { cancelled: ack, reason };
       } catch (error) {
         const reason = errorText(error);
         patchOp(key, { cancelling: false, cancelAck: false, cancelReason: reason });
-        appendLog({ source, text: `job.cancel впав: ${reason}`, level: "error" });
+        appendLog({ source, text: dt("runtime.cancelCrashed", { reason }), level: "error" });
         return { cancelled: false, reason };
       }
     },
@@ -255,9 +256,9 @@ export function useDevRuntime() {
   const pauseOp = useCallback(
     async (key) => {
       const op = opsRef.current[key];
-      if (!op?.running) return { paused: false, reason: "операція вже не виконується" };
+      if (!op?.running) return { paused: false, reason: dt("runtime.alreadyStopped") };
       if (typeof op.rpcId !== "number") {
-        const reason = "серверний id ще невідомий — не було жодної події прогресу";
+        const reason = dt("runtime.noServerId");
         patchOp(key, { pausing: false, controlReason: reason });
         return { paused: false, reason };
       }
@@ -270,20 +271,20 @@ export function useDevRuntime() {
           paused,
           pausing: false,
           testConcurrency: result?.concurrency ?? op.testConcurrency,
-          controlReason: paused ? null : "бекенд не підтвердив паузу",
+          controlReason: paused ? null : dt("runtime.pauseNotConfirmed"),
         });
         appendLog({
           source: op.label || key,
           text: paused
-            ? `пауза прийнята · активних ${result?.active || 0}, у черзі ${result?.queued || 0}`
-            : "бекенд не підтвердив паузу",
+            ? dt("runtime.pauseAccepted", { active: result?.active || 0, queued: result?.queued || 0 })
+            : dt("runtime.pauseNotConfirmed"),
           level: paused ? "info" : "error",
         });
         return result;
       } catch (error) {
         const reason = errorText(error);
         patchOp(key, { pausing: false, controlReason: reason });
-        appendLog({ source: op.label || key, text: `пауза не вдалася: ${reason}`, level: "error" });
+        appendLog({ source: op.label || key, text: dt("runtime.pauseFailed", { reason }), level: "error" });
         return { paused: false, reason };
       }
     },
@@ -294,9 +295,9 @@ export function useDevRuntime() {
   const resumeOp = useCallback(
     async (key, concurrency) => {
       const op = opsRef.current[key];
-      if (!op?.running) return { paused: false, reason: "операція вже не виконується" };
+      if (!op?.running) return { paused: false, reason: dt("runtime.alreadyStopped") };
       if (typeof op.rpcId !== "number") {
-        return { paused: true, reason: "серверний id ще невідомий" };
+        return { paused: true, reason: dt("runtime.serverIdUnknown") };
       }
 
       patchOp(key, { resuming: true, controlReason: null });
@@ -310,14 +311,14 @@ export function useDevRuntime() {
         });
         appendLog({
           source: op.label || key,
-          text: `продовжено · паралельність ${result?.concurrency ?? concurrency}`,
+          text: dt("runtime.resumed", { count: result?.concurrency ?? concurrency }),
           level: "info",
         });
         return result;
       } catch (error) {
         const reason = errorText(error);
         patchOp(key, { resuming: false, controlReason: reason });
-        appendLog({ source: op.label || key, text: `продовжити не вдалося: ${reason}`, level: "error" });
+        appendLog({ source: op.label || key, text: dt("runtime.resumeFailed", { reason }), level: "error" });
         return { paused: true, reason };
       }
     },
@@ -359,7 +360,7 @@ export function useDevRuntime() {
       .catch((error) => {
         appendLog({
           source: "ipc",
-          text: `не вдалося підписатись на прогрес: ${errorText(error)}`,
+          text: dt("runtime.subscribeFailed", { error: errorText(error) }),
           level: "error",
         });
       });

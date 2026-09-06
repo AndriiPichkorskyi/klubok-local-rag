@@ -10,24 +10,27 @@
  * який пояснює, чому вона не в окремому вікні.
  */
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import WalkthroughPanel from "./WalkthroughPanel";
 import { putRequest, clearRequest } from "./session";
 import { overlayShow, overlayHide, MissingCommandError } from "./tauri";
 import "./walkthrough.css";
+import { normalizeLanguage } from "../i18n";
 
 /**
  * Мета сесії: те, що людина спитала. Якщо запит сюди не дійшов —
  * беремо назву знайденої статті, а в найгіршому разі назву програми.
  */
-export function buildGoal({ askedText, docTitle, appName }) {
+export function buildGoal({ askedText, docTitle, appName, fallback = "" }) {
   const asked = typeof askedText === "string" ? askedText.trim() : "";
   if (asked) return asked;
   const doc = typeof docTitle === "string" ? docTitle.trim() : "";
   if (doc) return doc;
-  return appName ? `Виконати завдання в ${appName}` : "";
+  return appName ? fallback || `Виконати завдання в ${appName}` : "";
 }
 
 export default function WalkthroughLauncher({ appName, docTitle, askedText, docId = null }) {
+  const { t, i18n } = useTranslation();
   const [mode, setMode] = useState("idle"); // idle | window | inline
   const [request, setRequest] = useState(null);
   const [reason, setReason] = useState("");
@@ -38,8 +41,9 @@ export default function WalkthroughLauncher({ appName, docTitle, askedText, docI
     const next = putRequest({
       appId: appName,
       appName,
-      goal: buildGoal({ askedText, docTitle, appName }),
+      goal: buildGoal({ askedText, docTitle, appName, fallback: t("walkthrough.fallbackGoal", { app: appName }) }),
       docId,
+      language: normalizeLanguage(i18n.language) || "en",
     });
     if (!next) return;
     setRequest(next);
@@ -50,13 +54,12 @@ export default function WalkthroughLauncher({ appName, docTitle, askedText, docI
     } catch (error) {
       setReason(
         error instanceof MissingCommandError
-          ? "Окреме вікно поверх усіх ще не працює: у застосунку немає команди «overlay_show». " +
-            "Показуємо підказку тут."
-          : `Окреме вікно не відкрилося (${String(error?.message ?? error)}). Показуємо підказку тут.`,
+          ? t("walkthrough.inlineMissing")
+          : t("walkthrough.inlineError"),
       );
       setMode("inline");
     }
-  }, [appName, askedText, docId, docTitle]);
+  }, [appName, askedText, docId, docTitle, i18n.language, t]);
 
   const close = useCallback(() => {
     clearRequest();
@@ -71,26 +74,25 @@ export default function WalkthroughLauncher({ appName, docTitle, askedText, docI
       <div className="row">
         {mode === "inline" ? null : (
           <button type="button" onClick={open}>
-            {mode === "window" ? "Показати вікно підказки ще раз" : "Показати як"}
+            {mode === "window" ? t("walkthrough.showAgain") : t("walkthrough.showHow")}
           </button>
         )}
         {mode !== "idle" ? (
           <button type="button" onClick={close}>
-            Завершити підказку
+            {t("walkthrough.finishGuide")}
           </button>
         ) : null}
       </div>
 
       {mode === "idle" ? (
         <p className="wt-launch-note">
-          Проведемо по інтерфейсі програми крок за кроком: підказка стане маленьким вікном
-          у кутку екрана, а ви працюватимете у самій програмі.
+          {t("walkthrough.intro")}
         </p>
       ) : null}
 
       {mode === "window" ? (
         <p className="wt-launch-note">
-          Підказку відкрито окремим вікном поверх інших. Це вікно можна лишити позаду.
+          {t("walkthrough.windowOpen")}
         </p>
       ) : null}
 

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import WalkthroughPanel from "./WalkthroughPanel";
 import { readRequest, clearRequest, REQUEST_KEY } from "./session";
 import { overlayHide } from "./tauri";
+import { setLanguage } from "../i18n";
 import {
   isHintWindow,
   restoreWindowPosition,
@@ -19,6 +20,10 @@ import {
 
 export default function WalkthroughWindow() {
   const [request, setRequest] = useState(() => readRequest());
+
+  useEffect(() => {
+    if (request?.language) setLanguage(request.language, { persist: false });
+  }, [request?.language]);
 
   // Нове «Показати як» у головному вікні має перезапустити підказку тут,
   // а не відкрити друге вікно. Вікна одного походження бачать зміни сховища.

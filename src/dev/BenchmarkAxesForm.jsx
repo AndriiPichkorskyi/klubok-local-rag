@@ -14,8 +14,9 @@
  * що відрізняються лише ним, збірник розв'язав би в один і той самий файл.
  */
 import Checkbox from "./Checkbox";
-import { AXIS_FIELDS, formatDurationLong, pluralize } from "./benchmarkAxes";
+import { AXIS_FIELDS, formatDurationLong } from "./benchmarkAxes";
 import { BENCHMARK_KINDS } from "./useBenchmarkAxes";
+import { dt } from "./i18n";
 
 /**
  * Один рядок ціни: «8 режимів × 68 кейсів = 544 прогони ≈ 1 год».
@@ -29,8 +30,8 @@ function PlanRow({ kind, plan, planning, multiplier = 1 }) {
   if (!plan) {
     return (
       <div className="row dp-plan-row" data-plan={kind.id}>
-        <span className="dp-plan-name">{kind.label}</span>
-        <span className="muted dp-small">{planning ? "рахуємо…" : "план ще не отримано"}</span>
+        <span className="dp-plan-name">{dt(kind.labelKey)}</span>
+        <span className="muted dp-small">{dt(planning ? "benchmark.calculating" : "benchmark.noPlan")}</span>
       </div>
     );
   }
@@ -40,22 +41,21 @@ function PlanRow({ kind, plan, planning, multiplier = 1 }) {
   const totalMs =
     typeof plan.estimate?.totalMs === "number" ? plan.estimate.totalMs * times : undefined;
 
-  const modesWord = pluralize(plan.modeCount, "режим", "режими", "режимів");
-  const casesWord = pluralize(plan.caseCount, "кейс", "кейси", "кейсів");
-  const runsWord = pluralize(totalRuns, "прогін", "прогони", "прогонів");
-  const pairsWord = pluralize(times, "пара", "пари", "пар");
+  const modesWord = dt("benchmark.modes");
+  const casesWord = dt("benchmark.cases");
+  const runsWord = dt("benchmark.runs");
 
   return (
     <>
       <div className="row dp-plan-row" data-plan={kind.id}>
-        <span className="dp-plan-name">{kind.label}</span>
+        <span className="dp-plan-name">{dt(kind.labelKey)}</span>
         <span className={plan.blocked ? "dp-err" : undefined}>
           {plan.modeCount} {modesWord} × {plan.caseCount} {casesWord}
-          {times > 1 ? ` × ${times} ${pairsWord} моделей` : ""} ={" "}
+          {times > 1 ? ` × ${dt("benchmark.modelPairs", { count: times })}` : ""} ={" "}
           <b>{totalRuns}</b> {runsWord} LLM
         </span>
         <span className="dp-badge">≈ {formatDurationLong(totalMs)}</span>
-        {planning ? <span className="muted dp-small">оновлюємо…</span> : null}
+        {planning ? <span className="muted dp-small">{dt("benchmark.updating")}</span> : null}
       </div>
       {plan.blocked ? <div className="dp-alert">{plan.blockedReason}</div> : null}
     </>
@@ -92,7 +92,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
     <div className="dp-axes-block">
       <div className="row dp-axes-head">
         <span className="muted dp-small">
-          Осі бенчмарку (те, що не змінено, береться з config → rag.benchmark.axes):
+          {dt("benchmark.axes")}
         </span>
         <button
           type="button"
@@ -100,7 +100,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
           onClick={benchmark.resetAll}
           disabled={disabled || benchmark.changedCount === 0}
         >
-          Усе з конфіга
+          {dt("benchmark.allFromConfig")}
         </button>
       </div>
 
@@ -112,9 +112,9 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
           return (
             <div className="dp-axis" data-axis={field.id} key={field.id}>
               <div className="row dp-axis-head">
-                <span className="dp-axis-name">{field.label}</span>
+                <span className="dp-axis-name">{dt(field.labelKey)}</span>
                 {fromConfig ? (
-                  <span className="dp-badge">з конфіга</span>
+                  <span className="dp-badge">{dt("benchmark.fromConfig")}</span>
                 ) : (
                   <button
                     type="button"
@@ -122,7 +122,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
                     onClick={() => benchmark.resetAxis(field.id)}
                     disabled={disabled}
                   >
-                    ↩ з конфіга
+                    {dt("benchmark.resetFromConfig")}
                   </button>
                 )}
               </div>
@@ -136,7 +136,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
                       onChange={() => benchmark.toggleValue(field.id, option.value)}
                       disabled={disabled}
                     >
-                      {option.label}
+                      {option.labelKey ? dt(option.labelKey) : option.label}
                     </Checkbox>
                   ))}
                 </div>
@@ -144,7 +144,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
                 <input
                   type="text"
                   className="dp-axis-input"
-                  aria-label={field.label}
+                  aria-label={dt(field.labelKey)}
                   placeholder={field.placeholder}
                   value={benchmark.textOf(field.id)}
                   onChange={(event) => benchmark.setListText(field.id, event.target.value)}
@@ -153,7 +153,7 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
               )}
 
               <div className={`dp-axis-hint ${error ? "dp-err" : "muted"}`}>
-                {error || field.hint || ""}
+                {error || (field.hintKey ? dt(field.hintKey) : field.hint) || ""}
               </div>
             </div>
           );
@@ -165,10 +165,11 @@ export default function BenchmarkAxesForm({ benchmark, disabled = false, runMult
         runMultiplier={runMultiplier}
         note={
           estimate
-            ? `Оцінка часу: ${Math.round(estimate.msPerRun / 100) / 10} с на прогін ` +
-              `(${estimate.source}, ${estimate.concurrency} паралельних запити). ` +
-              `Осі йдуть у tests.run / tests.runExternal параметром axes; ` +
-              `у звіт вони лягають цілком, тож режим завжди видно з самого файлу.`
+            ? dt("benchmark.estimate", {
+                seconds: Math.round(estimate.msPerRun / 100) / 10,
+                source: estimate.source,
+                concurrency: estimate.concurrency,
+              })
             : null
         }
       />

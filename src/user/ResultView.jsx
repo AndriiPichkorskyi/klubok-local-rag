@@ -1,270 +1,203 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { BookOpen, Check, ChevronDown, Layers3, Sparkles } from "lucide-react";
 import Markdown from "./markdown";
 import WalkthroughLauncher from "../walkthrough/WalkthroughLauncher";
 
-const CLAMP_CHARS = 900;
-
-function useScrollIntoView(isSelected) {
-  const ref = useRef(null);
-  useEffect(() => {
-    if (isSelected && ref.current) {
-      ref.current.scrollIntoView({ block: "nearest" });
-    }
-  }, [isSelected]);
-  return ref;
+function initials(name) {
+  return String(name || "?")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 }
 
-/**
- * Єдиний компонент для відображення програми (як головної, так і альтернативних).
- * Якщо isMain=true, він показує причину від LLM та кнопки дій.
- * Якщо isAccordion=true (для альтернатив), він може згортатися/розгортатися.
- */
-
-function AppCard({
-  appName,
-  isMain,
-  reason,
-  docs = [],
-  selected,
-  onSelect,
-  askedText,
-  onAskAbout,
-}) {
-  const ref = useScrollIntoView(selected);
-  const firstDocTitle = docs?.[0]?.title || "";
-  const [expandedDocs, setExpandedDocs] = useState(new Set());
-
-  const toggleDoc = (idx) => {
-    setExpandedDocs((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
-  };
-
-  const renderDocs = () => {
-    if (!docs || docs.length === 0) {
-      return (
-        <span
-          className="sp-note"
-          style={{ display: "block", marginBottom: "16px" }}
-        >
-          Ця програма згадується у контексті, але повної статті немає.
-        </span>
-      );
-    }
-
-    return (
-      <div className="sp-steps">
-        {docs.map((doc, idx) => {
-          const isOpen = expandedDocs.has(idx);
-          const textLength = (doc.htmlContent || doc.content).length;
-
-          // Перша стаття частково відкрита (до 900 символів), інші - повністю сховані
-          const limit = idx === 0 ? CLAMP_CHARS : 0;
-          const isClamped = textLength > limit && !isOpen;
-
-          return (
-            <div
-              key={idx}
-              className="sp-doc-block"
-              style={{
-                marginTop: idx > 0 ? "16px" : "0",
-                borderTop: idx > 0 ? "1px solid var(--line)" : "none",
-                paddingTop: idx > 0 ? "16px" : "0",
-              }}
-            >
-              <div className="sp-doc-title">З довідки: {doc.title}</div>
-
-              {(!isClamped || limit > 0) && (
-                <div
-                  className={
-                    isClamped ? "sp-steps-body is-clamped" : "sp-steps-body"
-                  }
-                >
-                  <Markdown
-                    className="sp-md"
-                    text={doc.htmlContent || doc.content}
-                    isHtml={!!doc.htmlContent}
-                  />
-                </div>
-              )}
-
-              {textLength > limit && (
-                <div className="sp-progress-actions">
-                  <button type="button" onClick={() => toggleDoc(idx)}>
-                    {isOpen ? "Згорнути статтю" : "Показати статтю повністю"}
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  return (
-    <article
-      ref={ref}
-      className="sp-card"
-      data-selected={selected ? "true" : "false"}
-      onClick={onSelect}
-      style={!isMain ? { marginTop: "16px" } : {}}
-    >
-      {isMain ? (
-        <span className="sp-label">Найкраще підходить</span>
-      ) : (
-        <span
-          className="sp-label"
-          style={{ background: "var(--line)", color: "var(--text-muted)" }}
-        >
-          Також згадується
-        </span>
-      )}
-
-      <h2 className="sp-app-name">{appName}</h2>
-
-      {isMain && reason ? (
-        <Markdown className="sp-reason sp-md" text={reason} />
-      ) : null}
-
-      {renderDocs()}
-
-      <div
-        onClick={(event) => event.stopPropagation()}
-        style={{ display: "flex", gap: "8px", marginTop: "16px" }}
-      >
-        <WalkthroughLauncher
-          appName={appName}
-          docTitle={firstDocTitle}
-          askedText={askedText}
-        />
-        {/* {!isMain && (
-           <button type="button" className="sp-alt-btn" style={{border: '1px solid var(--line)', background: 'transparent', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer'}} onClick={() => onAskAbout(appName)}>
-             Перепитати про «{appName}»
-           </button>
-        )} */}
-      </div>
-    </article>
-  );
+function sameAppName(left, right) {
+  return String(left || "").trim().toLocaleLowerCase() ===
+    String(right || "").trim().toLocaleLowerCase();
 }
+
 function EmptyResult({ answer, invalid }) {
+  const { t } = useTranslation();
   return (
     <section className="sp-empty">
-      <h2>{invalid ? "Не зрозумів запит" : "Нічого підхожого не знайшлося"}</h2>
-      <p className="muted">
-        {answer.message ||
-          (invalid
-            ? "Схоже, у запиті випадкові символи. Спробуйте написати завдання словами."
-            : "Серед програм, встановлених на цьому Mac, не знайшлося тієї, що впорається із завданням.")}
-      </p>
-      <ul className="sp-tips">
-        <li>
-          Опишіть саме дію, а не назву програми: «записати відео з екрана»
-          замість «OBS».
-        </li>
-        <li>Спробуйте простіші слова або інше формулювання.</li>
-        <li>
-          Якщо база знань щойно створена — можливо, документацію ще не
-          завантажено.
-        </li>
-      </ul>
+      <span className="empty-icon" aria-hidden="true"><Sparkles size={22} /></span>
+      <h2>{invalid ? t("result.invalidTitle") : t("result.emptyTitle")}</h2>
+      <p>{answer.message || t("result.emptyHint")}</p>
       {answer.contextApps.length > 0 ? (
-        <p className="sp-seen">
-          Переглянуто документацію: {answer.contextApps.join(", ")}.
-        </p>
+        <small>{t("result.reviewed", { apps: answer.contextApps.join(", ") })}</small>
       ) : null}
     </section>
   );
 }
 
 function UncertainResult({ answer }) {
+  const { t } = useTranslation();
   return (
     <section className="sp-empty">
-      <h2>Точної рекомендації немає</h2>
-      <p className="muted">
-        Модель відповіла, але не вказала, з документації якої програми взято
-        відповідь. Тому показуємо текст як є — перевірте його критично.
-      </p>
+      <span className="empty-icon" aria-hidden="true"><Layers3 size={22} /></span>
+      <h2>{t("result.uncertainTitle")}</h2>
       <Markdown className="sp-md" text={answer.message} />
-      {answer.contextApps.length > 0 ? (
-        <p className="sp-seen">
-          Переглянуто документацію: {answer.contextApps.join(", ")}.
-        </p>
+    </section>
+  );
+}
+
+function GuidePreview({ docs }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const first = docs?.[0];
+  if (!first) return null;
+  return (
+    <section className="result-guide-preview">
+      <button type="button" className="result-guide-toggle" onClick={() => setOpen((value) => !value)}>
+        <span><BookOpen size={17} /> {t("result.fromGuide", { title: first.title })}</span>
+        <ChevronDown size={17} className={open ? "is-open" : ""} />
+      </button>
+      {open ? (
+        <div className="result-guide-body">
+          <Markdown className="sp-md" text={first.htmlContent || first.content} isHtml={!!first.htmlContent} />
+        </div>
       ) : null}
     </section>
   );
 }
 
-export default function ResultView({
-  answer,
-  selectedIndex,
-  onSelect,
-  stepsOpen,
-  onToggleSteps,
-  openAlts,
-  onToggleAlt,
-  onAskAbout,
-  askedText = "",
-}) {
-  if (!answer) return null;
+function AlternativeCard({ name, docs, selected, onSelect }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
 
-  if (answer.kind === "empty" || answer.kind === "invalid") {
-    return (
-      <div className="sp-result">
-        <EmptyResult answer={answer} invalid={answer.kind === "invalid"} />
-      </div>
-    );
-  }
-  if (answer.kind === "uncertain") {
-    return (
-      <div className="sp-result">
-        <UncertainResult answer={answer} />
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (selected && docs.length > 0) setOpen(true);
+  }, [docs.length, selected]);
+
+  const toggle = () => {
+    onSelect();
+    if (docs.length > 0) setOpen((value) => !value);
+  };
 
   return (
-    <div className="sp-result">
-      <AppCard
-        isMain={true}
-        appName={answer.appName}
-        reason={answer.reason}
-        docs={answer.mainDocuments}
-        selected={selectedIndex === 0}
-        onSelect={() => onSelect(0)}
-        askedText={askedText}
-      />
+    <article className="result-alt-item" data-open={open ? "true" : "false"}>
+      <button
+        type="button"
+        className="result-alt-card"
+        data-selected={selected ? "true" : "false"}
+        aria-expanded={docs.length > 0 ? open : undefined}
+        onClick={toggle}
+      >
+        <span className="app-monogram" aria-hidden="true">{initials(name)}</span>
+        <span className="result-alt-copy">
+          <strong>{name}</strong>
+          <small>
+            {docs.length > 0
+              ? t("result.answerGuides", { count: docs.length })
+              : t("result.alternative")}
+          </small>
+        </span>
+        <ChevronDown size={17} className={open ? "is-open" : ""} aria-hidden="true" />
+      </button>
+
+      {open ? (
+        <div className="result-alt-docs">
+          {docs.map((doc, index) => (
+            <details className="result-alt-doc" key={`${doc.docId || index}-${doc.title}`} open={index === 0}>
+              <summary>{doc.title || t("result.guideFallback")}</summary>
+              <div className="result-alt-doc-body">
+                <Markdown
+                  className="sp-md"
+                  text={doc.htmlContent || doc.content}
+                  isHtml={!!doc.htmlContent}
+                />
+              </div>
+            </details>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+export default function ResultView({ answer, selectedIndex, onSelect, askedText = "" }) {
+  const { t, i18n } = useTranslation();
+  if (!answer) return null;
+  if (answer.kind === "empty" || answer.kind === "invalid") {
+    return <div className="sp-result"><EmptyResult answer={answer} invalid={answer.kind === "invalid"} /></div>;
+  }
+  if (answer.kind === "uncertain") {
+    return <div className="sp-result"><UncertainResult answer={answer} /></div>;
+  }
+
+  const firstDoc = answer.mainDocuments?.[0];
+
+  return (
+    <div className="sp-result result-view">
+      <header className="result-intro">
+        <span className="eyebrow">{t("result.bestMatch")}</span>
+        <h2>{t("result.ready", { app: answer.appName })}</h2>
+        <p>{t("result.foundLocally")}</p>
+      </header>
+
+      <article
+        className="result-primary"
+        data-selected={selectedIndex === 0 ? "true" : "false"}
+        onClick={() => onSelect(0)}
+      >
+        <div className="result-primary-head">
+          <span className="app-monogram is-large" aria-hidden="true">{initials(answer.appName)}</span>
+          <div className="result-primary-title">
+            <div><h3>{answer.appName}</h3><span className="soft-badge">{t("result.installed")}</span></div>
+            <p>{firstDoc?.title || t("result.available")}</p>
+          </div>
+          <div className="result-actions" onClick={(event) => event.stopPropagation()}>
+            <WalkthroughLauncher
+              appName={answer.appName}
+              docTitle={firstDoc?.title || ""}
+              askedText={askedText}
+              docId={firstDoc?.docId ?? null}
+            />
+          </div>
+        </div>
+
+        <div className="result-trust-row">
+          <span><Check size={15} /> {t("result.installed")}</span>
+          <span><Check size={15} /> {t("result.offline")}</span>
+          <span><Check size={15} /> {t("result.localKnowledge")}</span>
+        </div>
+      </article>
+
+      {answer.reason ? (
+        <section className="result-reason">
+          <span className="eyebrow">{t("result.why")}</span>
+          <Markdown className="sp-md" text={answer.reason} />
+        </section>
+      ) : null}
+
+      <GuidePreview docs={answer.mainDocuments} />
 
       {answer.alternatives.length > 0 ? (
-        <section className="sp-alts">
-          <div className="sp-alts-title">
-            Інші програми, що згадувалися у знайденій документації
+        <section className="result-alternatives">
+          <div className="result-section-title">
+            <div><span className="eyebrow">{t("result.otherOptions")}</span><h3>{t("result.alsoFound")}</h3></div>
           </div>
-          <ul className="sp-alts-list">
-            {answer.alternatives.map((name, i) => (
-              <AppCard
+          <div className="result-alt-grid">
+            {answer.alternatives.map((name, index) => {
+              const docs = answer.alternativeDocs.filter((doc) => sameAppName(doc.appName, name));
+              return (
+              <AlternativeCard
                 key={name}
-                isMain={false}
-                appName={name}
-                docs={answer.alternativeDocs.filter((d) => d.appName === name)}
-                selected={selectedIndex === i + 1}
-                onSelect={() => onSelect(i + 1)}
-                onAskAbout={onAskAbout}
-                askedText={askedText}
+                name={name}
+                docs={docs}
+                selected={selectedIndex === index + 1}
+                onSelect={() => onSelect(index + 1)}
               />
-            ))}
-          </ul>
+              );
+            })}
+          </div>
         </section>
       ) : null}
 
       {answer.elapsedMs ? (
-        <p className="sp-meta">
-          Пошук зайняв {(answer.elapsedMs / 1000).toFixed(1).replace(".", ",")}{" "}
-          с.
-        </p>
+        <p className="sp-meta">{t("result.elapsed", { value: new Intl.NumberFormat(i18n.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(answer.elapsedMs / 1000) })}</p>
       ) : null}
     </div>
   );

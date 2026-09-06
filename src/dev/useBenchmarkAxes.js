@@ -16,6 +16,7 @@
  * одразу і рівно тими самими словами, якими про неї сказав би сам бенчмарк.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { rpc } from "../ipc";
 import { errorText } from "./format";
 import {
@@ -26,17 +27,19 @@ import {
   parseAxisInput,
   toggleAxisValue,
 } from "./benchmarkAxes";
+import { dt } from "./i18n";
 
 /** Види бенчмарку і методи, якими вони запускаються. */
 export const BENCHMARK_KINDS = [
-  { id: "rag", method: "tests.run", label: "RAG-бенчмарк" },
-  { id: "external", method: "tests.runExternal", label: "EXTERNAL-тести" },
+  { id: "rag", method: "tests.run", labelKey: "benchmark.rag" },
+  { id: "external", method: "tests.runExternal", labelKey: "benchmark.external" },
 ];
 
 /** Пауза перед запитом плану: людина ще друкує «0.1, 0.5, …». */
 const PLAN_DEBOUNCE_MS = 250;
 
 export function useBenchmarkAxes() {
+  const { i18n } = useTranslation();
   /** Осі, змінені людиною. Порожньо = все з конфіга. */
   const [overrides, setOverrides] = useState({});
   /** Сирий текст полів-переліків: показуємо саме те, що набрали. */
@@ -46,6 +49,21 @@ export function useBenchmarkAxes() {
   const [plans, setPlans] = useState({});
   const [planError, setPlanError] = useState(null);
   const [planning, setPlanning] = useState(false);
+
+  // Помилки форми — теж текст інтерфейсу, тому перемальовуємо їх після зміни мови.
+  useEffect(() => {
+    const next = {};
+    for (const [axisId, text] of Object.entries(texts)) {
+      const { error } = parseAxisInput(axisId, text);
+      if (error) next[axisId] = error;
+    }
+    for (const [axisId, values] of Object.entries(overrides)) {
+      if (Array.isArray(values) && values.length === 0) next[axisId] = dt("benchmark.atLeastOne");
+    }
+    setFieldErrors(next);
+    // Тексти та значення навмисно не є залежностями: вони оновлюють помилки у своїх обробниках.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.resolvedLanguage]);
 
   // Ключ-рядок: об'єкт `overrides` щоразу новий за посиланням, і ефект
   // зациклився б на власному стані.
@@ -98,7 +116,7 @@ export function useBenchmarkAxes() {
       setOverrides((prev) => ({ ...prev, [axisId]: next }));
       setFieldErrors((prev) => {
         const copy = { ...prev };
-        if (next.length === 0) copy[axisId] = "потрібне хоча б одне значення";
+        if (next.length === 0) copy[axisId] = dt("benchmark.atLeastOne");
         else delete copy[axisId];
         return copy;
       });

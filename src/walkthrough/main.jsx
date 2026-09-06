@@ -2,6 +2,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import WalkthroughWindow from "./WalkthroughWindow";
+import "../i18n";
 import "../ui.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(

@@ -10,15 +10,16 @@ import Checkbox from "./Checkbox";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { summarizeResult } from "./format";
+import { dt } from "./i18n";
 
 /** Кроки в тому ж порядку, що й у CLI. Ключ = метод з docs/contracts/rpc.md. */
 const STEPS = [
-  { key: "pipeline.scanApps", label: "1. Сканувати програми" },
-  { key: "pipeline.fetchDocs", label: "2. Завантажити довідку (веб)" },
-  { key: "pipeline.fetchLocalDocs", label: "3. Завантажити довідку (локальна)" },
-  { key: "pipeline.keywordAugmentation", label: "4. Згенерувати наміри (keywords)" },
-  { key: "pipeline.vectorize", label: "5. Побудувати вектори" },
-  { key: "pipeline.vectorizeIntents", label: "6. Вектори намірів" },
+  { key: "pipeline.scanApps", labelKey: "pipeline.steps.scan" },
+  { key: "pipeline.fetchDocs", labelKey: "pipeline.steps.web" },
+  { key: "pipeline.fetchLocalDocs", labelKey: "pipeline.steps.local" },
+  { key: "pipeline.keywordAugmentation", labelKey: "pipeline.steps.keywords" },
+  { key: "pipeline.vectorize", labelKey: "pipeline.steps.vectors" },
+  { key: "pipeline.vectorizeIntents", labelKey: "pipeline.steps.intentVectors" },
 ];
 
 export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
@@ -31,25 +32,21 @@ export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
 
   const startStep = (method, label) => run(method, label, (ref) => rpc(method, {}, ref));
 
-  const startFullSync = () =>
-    run("pipeline.fullSync", "Повне оновлення", (ref) =>
-      rpc("pipeline.fullSync", models.length > 0 ? { models } : {}, ref),
-    );
-
   /**
    * Зупинка живе в useDevRuntime: job.cancel приймає СЕРВЕРНИЙ id, а не нашу
    * мітку ref, тож id беремо з першої події прогресу (docs/notes/phase3.md).
    * Що саме відповів бекенд — показує сама кнопка «Стоп», без прикрас:
    * `cancelled:false` означає «зупинити не вдалося», а не «зупинено».
    */
-  const renderOp = ({ key, label }) => {
+  const renderOp = ({ key, label, labelKey }) => {
+    const visibleLabel = label || dt(labelKey);
     const op = opState(ops, key);
     return (
       <OpButton
         key={key}
         op={op}
-        label={label}
-        onClick={() => startStep(key, label)}
+        label={visibleLabel}
+        onClick={() => startStep(key, visibleLabel)}
         onCancel={() => cancelOp?.(key)}
       >
         {!op.running && op.result !== undefined ? (
@@ -63,16 +60,16 @@ export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
 
   return (
     <Section
-      title="Окремі кроки пайплайна"
-      hint="для налагодження і відновлення: один крок, без послідовності"
+      title={dt("pipeline.title")}
+      hint={dt("pipeline.hint")}
       collapsible
     >
       <div className="dp-grid">{STEPS.map(renderOp)}</div>
 
       <div className="dp-op">
-        {renderOp({ key: "pipeline.fullSync", label: "Повне оновлення (усі кроки поспіль)" })}
+        {renderOp({ key: "pipeline.fullSync", label: dt("pipeline.fullLabel") })}
         <div className="dp-check-group">
-          <span className="muted dp-small">Векторизувати для моделей:</span>
+          <span className="muted dp-small">{dt("pipeline.models")}</span>
           {embedModels.map((model) => (
             <Checkbox
               key={model}
@@ -84,7 +81,7 @@ export default function PipelineSection({ ops, run, cancelOp, embedModels }) {
             </Checkbox>
           ))}
           {models.length === 0 ? (
-            <span className="muted dp-small">нічого не обрано — модель з конфіга</span>
+            <span className="muted dp-small">{dt("pipeline.configModel")}</span>
           ) : null}
         </div>
       </div>

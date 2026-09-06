@@ -4,8 +4,9 @@
  * увесь застосунок, а це прямо суперечить вимозі «інтерфейс не блокується».
  */
 import { useEffect, useRef } from "react";
+import { dt } from "./i18n";
 
-export default function ConfirmDialog({ title, message, confirmLabel = "Так, очистити", onConfirm, onCancel }) {
+export default function ConfirmDialog({ title, message, confirmLabel = dt("dialog.confirm"), onConfirm, onCancel }) {
   const cancelRef = useRef(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function ConfirmDialog({ title, message, confirmLabel = "Так, 
         <div className="dp-small">{message}</div>
         <div className="dp-dialog-actions">
           <button type="button" ref={cancelRef} onClick={onCancel}>
-            Скасувати (Esc)
+            {dt("dialog.cancel")}
           </button>
           <button type="button" className="dp-danger" onClick={onConfirm}>
             {confirmLabel}

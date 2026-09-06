@@ -18,18 +18,22 @@ import { ollama } from "../../services/ollama.service.js";
 import { logger } from "../../services/logger.service.js";
 import { sanitizeBox } from "./geometry.js";
 import { STATES } from "./prompts.js";
+import { localized } from "../../i18n/language.js";
 
 /** Стани, у яких рамка на екрані не має сенсу навіть якщо модель її дала. */
 const STATES_WITHOUT_TARGET = ["app_not_started", "wrong_window"];
 
 /** Запасні інструкції на випадок, коли модель не дала жодного тексту. */
-const FALLBACK_INSTRUCTION = {
-  app_not_started: "Відкрийте потрібну програму — на знімку її вікна немає.",
-  wrong_window: "Перейдіть у вікно потрібної програми — зараз попереду інше вікно.",
-  done: "Схоже, мету вже досягнуто.",
-  unclear: "Не вдалося розібрати, що зараз на екрані. Зробіть знімок ще раз.",
-  ready: "Продовжуйте за довідкою програми.",
-};
+function fallbackInstruction(state, language) {
+  const translations = {
+    app_not_started: { uk: "Відкрийте потрібну програму — на знімку її вікна немає.", en: "Open the required app — its window isn't visible in the screenshot." },
+    wrong_window: { uk: "Перейдіть у вікно потрібної програми — зараз попереду інше вікно.", en: "Switch to the required app — another window is currently in front." },
+    done: { uk: "Схоже, мету вже досягнуто.", en: "It looks like the goal has already been completed." },
+    unclear: { uk: "Не вдалося розібрати, що зараз на екрані. Зробіть знімок ще раз.", en: "The screen couldn't be recognized. Take another screenshot." },
+    ready: { uk: "Продовжуйте за довідкою програми.", en: "Continue by following the app guide." },
+  };
+  return localized(language, translations[state] || translations.unclear);
+}
 
 /**
  * Дістає об'єкт із того, що віддала модель.
@@ -133,7 +137,7 @@ export async function askVision({ prompt, system, schema, image, signal, onProgr
  * @param {Object} options - {sent: {width, height}, failure: string|null,
  *        allowedStates: string[] — звужений перелік, коли вікно підтвердила ОС}
  */
-export function toStepFields(parsed, { sent, failure = null, allowedStates = STATES } = {}) {
+export function toStepFields(parsed, { sent, failure = null, allowedStates = STATES, language = "uk" } = {}) {
   const notes = [];
 
   if (!parsed) {
@@ -141,8 +145,11 @@ export function toStepFields(parsed, { sent, failure = null, allowedStates = STA
     return {
       state: "unclear",
       instruction: failure
-        ? `Не вдалося подивитись на екран: ${failure}. Спробуйте ще раз.`
-        : FALLBACK_INSTRUCTION.unclear,
+        ? localized(language, {
+            uk: `Не вдалося подивитись на екран: ${failure}. Спробуйте ще раз.`,
+            en: "The screen couldn't be analyzed. Try again.",
+          })
+        : fallbackInstruction("unclear", language),
       target: null,
       screenSummary: null,
       // Модель нічого не сказала — отже, і про попередній крок вона не сказала
@@ -170,7 +177,7 @@ export function toStepFields(parsed, { sent, failure = null, allowedStates = STA
   }
 
   let instruction = String(parsed.instruction || "").trim();
-  if (!instruction) instruction = FALLBACK_INSTRUCTION[state];
+  if (!instruction) instruction = fallbackInstruction(state, language);
 
   let target = null;
   if (parsed.target_found === true) {
@@ -179,7 +186,7 @@ export function toStepFields(parsed, { sent, failure = null, allowedStates = STA
       if (wasPixels) notes.push("модель дала пікселі замість часток — перераховано");
       const confidence = Number(parsed.confidence);
       target = {
-        label: String(parsed.target_label || "").trim() || "елемент інтерфейсу",
+        label: String(parsed.target_label || "").trim() || localized(language, { uk: "елемент інтерфейсу", en: "interface control" }),
         box,
         confidence: Number.isFinite(confidence) ? Math.min(1, Math.max(0, confidence)) : 0,
       };

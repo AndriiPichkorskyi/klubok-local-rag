@@ -9,18 +9,19 @@ import Section from "./Section";
 import OpButton from "./OpButton";
 import ConfirmDialog from "./ConfirmDialog";
 import { opState } from "./useDevRuntime";
+import { dt } from "./i18n";
 
 /** value — рівно ті значення target, які приймає sidecar. */
 const TARGETS = [
-  { value: "all", label: "Очистити ВСЕ (повне скидання)" },
-  { value: "web", label: "Тільки ВЕБ-документи" },
-  { value: "local", label: "Тільки ЛОКАЛЬНА довідка" },
-  { value: "apps", label: "Таблиця програм (SQLite)" },
-  { value: "document_links", label: "Посилання на документацію" },
-  { value: "raw_html", label: "Сирий HTML довідки" },
-  { value: "web_documents", label: "Очищений текст документації" },
-  { value: "lancedb", label: "Векторна база (LanceDB)" },
-  { value: "intents", label: "Наміри (ключові слова та їх вектори)" },
+  { value: "all", labelKey: "clear.targets.all" },
+  { value: "web", labelKey: "clear.targets.web" },
+  { value: "local", labelKey: "clear.targets.local" },
+  { value: "apps", labelKey: "clear.targets.apps" },
+  { value: "document_links", labelKey: "clear.targets.links" },
+  { value: "raw_html", labelKey: "clear.targets.raw" },
+  { value: "web_documents", labelKey: "clear.targets.documents" },
+  { value: "lancedb", labelKey: "clear.targets.lancedb" },
+  { value: "intents", labelKey: "clear.targets.intents" },
 ];
 
 export default function ClearSection({ ops, run, cancelOp }) {
@@ -30,13 +31,13 @@ export default function ClearSection({ ops, run, cancelOp }) {
     const target = pending;
     setPending(null);
     if (!target) return;
-    run(`db.clear:${target.value}`, `Очистка «${target.value}»`, (ref) =>
+    run(`db.clear:${target.value}`, dt("clear.operation", { target: target.value }), (ref) =>
       rpc("db.clear", { target: target.value }, ref),
     );
   };
 
   return (
-    <Section title="Очистка бази" hint="незворотні дії — з підтвердженням">
+    <Section title={dt("clear.title")} hint={dt("clear.hint")}>
       <div className="dp-grid">
         {TARGETS.map((target) => {
           const key = `db.clear:${target.value}`;
@@ -45,7 +46,7 @@ export default function ClearSection({ ops, run, cancelOp }) {
             <OpButton
               key={key}
               op={op}
-              label={target.label}
+              label={dt(target.labelKey)}
               danger
               onClick={() => setPending(target)}
               onCancel={() => cancelOp?.(key)}
@@ -58,9 +59,9 @@ export default function ClearSection({ ops, run, cancelOp }) {
 
       {pending ? (
         <ConfirmDialog
-          title="Незворотна дія"
-          message={`Очистити «${pending.value}» (${pending.label})? Дані видаляються назавжди, скасувати буде неможливо.`}
-          confirmLabel={`Очистити ${pending.value}`}
+          title={dt("clear.irreversible")}
+          message={dt("clear.message", { target: pending.value, label: dt(pending.labelKey) })}
+          confirmLabel={dt("clear.confirm", { target: pending.value })}
           onConfirm={confirmClear}
           onCancel={() => setPending(null)}
         />

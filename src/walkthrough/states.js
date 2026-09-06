@@ -23,7 +23,7 @@ const DESCRIPTORS = {
     tone: "go",
     title: "", // заголовка немає навмисно: героєм картки є сама інструкція
     hint: "",
-    primary: { action: ACTION.NEXT, label: "Далі" },
+    primary: { action: ACTION.NEXT, labelKey: "walkthrough.next" },
     showStuck: true,
     showConfirm: true,
     showInstruction: true,
@@ -31,9 +31,9 @@ const DESCRIPTORS = {
   wrong_window: {
     key: "wrong_window",
     tone: "warn",
-    title: "Спершу відкрийте потрібне вікно",
-    hint: "Поки попереду інша програма, вести нікуди: кнопок із підказки на екрані немає.",
-    primary: { action: ACTION.RECHECK, label: "Я перейшов — перевірити" },
+    titleKey: "walkthrough.stateWrongTitle",
+    hintKey: "walkthrough.stateWrongHint",
+    primary: { action: ACTION.RECHECK, labelKey: "walkthrough.recheck" },
     showStuck: false,
     showConfirm: false,
     showInstruction: true,
@@ -41,9 +41,9 @@ const DESCRIPTORS = {
   app_not_started: {
     key: "app_not_started",
     tone: "warn",
-    title: "Програму ще не запущено",
-    hint: "Запустимо її — і продовжимо з першого кроку.",
-    primary: { action: ACTION.LAUNCH, label: "Запустити програму" },
+    titleKey: "walkthrough.stateStoppedTitle",
+    hintKey: "walkthrough.stateStoppedHint",
+    primary: { action: ACTION.LAUNCH, labelKey: "walkthrough.launch" },
     showStuck: false,
     showConfirm: false,
     showInstruction: true,
@@ -51,9 +51,9 @@ const DESCRIPTORS = {
   done: {
     key: "done",
     tone: "done",
-    title: "Готово",
-    hint: "Мету досягнуто. Вікно підказки можна закрити.",
-    primary: { action: ACTION.FINISH, label: "Завершити" },
+    titleKey: "walkthrough.stateDoneTitle",
+    hintKey: "walkthrough.stateDoneHint",
+    primary: { action: ACTION.FINISH, labelKey: "walkthrough.finish" },
     showStuck: false,
     showConfirm: false,
     showInstruction: true,
@@ -66,11 +66,9 @@ const DESCRIPTORS = {
   loop: {
     key: "loop",
     tone: "warn",
-    title: "Підказка пішла по колу",
-    hint:
-      "Модель другий раз поспіль пропонує те саме — далі вона це лише повторюватиме. " +
-      "Надійніше пройти решту кроків за довідкою самому; якщо крок уже зроблено, скажіть про це прямо.",
-    primary: { action: ACTION.MANUAL, label: "Перейти до списку кроків" },
+    titleKey: "walkthrough.stateLoopTitle",
+    hintKey: "walkthrough.stateLoopHint",
+    primary: { action: ACTION.MANUAL, labelKey: "walkthrough.manual" },
     showStuck: false,
     showConfirm: true,
     showInstruction: true,
@@ -78,9 +76,9 @@ const DESCRIPTORS = {
   unclear: {
     key: "unclear",
     tone: "unsure",
-    title: "Не розібрав, що зараз на екрані",
-    hint: "Буває на нестандартних вікнах. Можна подивитись ще раз або сказати, що кнопки не видно.",
-    primary: { action: ACTION.RETRY, label: "Подивитись ще раз" },
+    titleKey: "walkthrough.stateUnclearTitle",
+    hintKey: "walkthrough.stateUnclearHint",
+    primary: { action: ACTION.RETRY, labelKey: "walkthrough.retryLook" },
     showStuck: true,
     showConfirm: true,
     showInstruction: true,
@@ -91,16 +89,19 @@ const DESCRIPTORS = {
  * Опис вигляду для значення `state`. Невідоме значення — це не привід
  * показати порожнечу: поводимось як з «unclear», але чесно кажемо, що прийшло.
  */
-export function describeState(state) {
+export function describeState(state, t) {
   const key = typeof state === "string" ? state.trim() : "";
-  if (DESCRIPTORS[key]) return DESCRIPTORS[key];
-  return {
+  const source = DESCRIPTORS[key] || {
     ...DESCRIPTORS.unclear,
     key: "unknown",
-    title: "Незнайомий стан підказки",
-    hint: key
-      ? `Бекенд повернув state «${key}», якого немає в контракті. Показуємо інструкцію як є.`
-      : "Бекенд не повернув поле state. Показуємо інструкцію як є.",
+    titleKey: "walkthrough.stateUnknownTitle",
+    hintKey: "walkthrough.stateUnknownHint",
+  };
+  return {
+    ...source,
+    title: source.titleKey ? t(source.titleKey) : source.title || "",
+    hint: source.hintKey ? t(source.hintKey) : source.hint || "",
+    primary: { ...source.primary, label: t(source.primary.labelKey) },
   };
 }
 

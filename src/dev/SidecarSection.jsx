@@ -12,21 +12,23 @@
  * перелічує, що саме зробити людині. Решта полів — доказова база під ці два.
  */
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { rpc, sidecarStatus, sidecarRestart, onStatus } from "../ipc";
 import Section from "./Section";
 import OpButton, { ErrorBox } from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { errorText } from "./format";
+import { dt } from "./i18n";
 
 /** Ключ операції завантаження моделі. Своя мітка на кожну модель: інакше два
  *  паралельних `pullModel` ділили б один прогрес. */
 const pullKey = (model) => `bootstrap.pullModel:${model}`;
 
 /** Час перевірки людською мовою; ISO-рядок у панелі читати незручно. */
-function formatCheckedAt(iso) {
+function formatCheckedAt(iso, locale) {
   if (!iso) return "—";
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleTimeString();
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleTimeString(locale);
 }
 
 /** Список моделей із позначкою наявності. Відсутні — червоним, решта — зеленим. */
@@ -45,6 +47,7 @@ function ModelChips({ models, missing = [] }) {
 }
 
 export default function SidecarSection({ ops, run, cancelOp, note }) {
+  const { i18n } = useTranslation();
   const [status, setStatus] = useState(null);
 
   useEffect(() => {
@@ -53,7 +56,7 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
 
     sidecarStatus()
       .then(setStatus)
-      .catch((error) => note("sidecar", `статус недоступний: ${errorText(error)}`, "error"));
+      .catch((error) => note("sidecar", dt("sidecar.statusUnavailable", { error: errorText(error) }), "error"));
 
     const subscription = onStatus(setStatus);
     subscription
@@ -61,7 +64,7 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
         if (disposed) fn();
         else unlisten = fn;
       })
-      .catch((error) => note("sidecar", `підписка на статус: ${errorText(error)}`, "error"));
+      .catch((error) => note("sidecar", dt("sidecar.statusSubscription", { error: errorText(error) }), "error"));
 
     // Відписка обов'язкова: інакше після виходу з панелі слухач лишиться жити.
     return () => {
@@ -77,7 +80,7 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
 
   /** Відмову в перезапуску повертаємо як результат, а не як помилку операції. */
   const restart = () =>
-    run("sidecarRestart", "Перезапуск sidecar", async () => {
+    run("sidecarRestart", dt("sidecar.restartOperation"), async () => {
       try {
         return await sidecarRestart();
       } catch (error) {
@@ -86,12 +89,12 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
     });
 
   const checkEnv = () =>
-    run("bootstrap.check", "Перевірка оточення", (ref) => rpc("bootstrap.check", {}, ref));
+    run("bootstrap.check", dt("sidecar.checkOperation"), (ref) => rpc("bootstrap.check", {}, ref));
 
   /** Завантаження моделі. Після успіху перевірку повторюємо самі: без цього
    *  панель показувала б модель відсутньою, хоча вона вже на диску. */
   const pullModel = (model) =>
-    run(pullKey(model), `Завантаження моделі ${model}`, (ref) =>
+    run(pullKey(model), dt("sidecar.pullOperation", { model }), (ref) =>
       rpc("bootstrap.pullModel", { model }, ref),
     ).then((outcome) => {
       if (outcome.ok && !outcome.cancelled) checkEnv();
@@ -106,50 +109,50 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
     ...(models?.missingOptional || []).map((model) => ({ model, required: false })),
   ];
 
-  const readyHint = bootstrap ? (bootstrap.ready ? "оточення готове" : "оточення не готове") : "";
+  const readyHint = bootstrap ? dt(bootstrap.ready ? "sidecar.readyHint" : "sidecar.notReadyHint") : "";
 
   return (
     <Section
       title="Sidecar"
-      hint={[status?.mode ? `режим ${status.mode}` : "", readyHint].filter(Boolean).join(" · ")}
+      hint={[status?.mode ? dt("sidecar.mode", { mode: status.mode }) : "", readyHint].filter(Boolean).join(" · ")}
     >
       <dl className="dp-kv">
-        <dt>З'єднання</dt>
+        <dt>{dt("sidecar.connection")}</dt>
         <dd className={status?.connected ? "dp-ok" : "dp-err"}>
-          {status?.connected ? "підключено" : "немає зв'язку"}
+          {dt(status?.connected ? "sidecar.connected" : "sidecar.disconnected")}
         </dd>
-        <dt>Адреса</dt>
+        <dt>{dt("sidecar.address")}</dt>
         <dd>{status ? `${status.host}:${status.port}` : "—"}</dd>
-        <dt>PID процесу</dt>
-        <dd>{status?.pid ?? "— (керує розробник)"}</dd>
+        <dt>{dt("sidecar.pid")}</dt>
+        <dd>{status?.pid ?? dt("sidecar.managed")}</dd>
       </dl>
 
       <div className="dp-grid">
         <OpButton
           op={pingOp}
-          label="Перевірити живість (ping)"
+          label={dt("sidecar.ping")}
           onClick={() => run("ping", "ping", (ref) => rpc("ping", {}, ref))}
           onCancel={() => cancelOp?.("ping")}
         >
           {pingOp.result ? (
             <div className="dp-op-msg">
-              pid {pingOp.result.pid} · версія {pingOp.result.version}
+              pid {pingOp.result.pid} · {dt("sidecar.version")} {pingOp.result.version}
             </div>
           ) : null}
         </OpButton>
 
-        <OpButton op={restartOp} label="Перезапустити sidecar" onClick={restart}>
+        <OpButton op={restartOp} label={dt("sidecar.restart")} onClick={restart}>
           {restartOp.result?.refused ? (
-            <ErrorBox kind="info" text={`Відмова бекенда: ${restartOp.result.refused}`} />
+            <ErrorBox kind="info" text={dt("sidecar.refused", { reason: restartOp.result.refused })} />
           ) : null}
           {restartOp.result?.restarted ? (
-            <div className="dp-op-msg dp-ok">перезапущено, pid {restartOp.result.pid}</div>
+            <div className="dp-op-msg dp-ok">{dt("sidecar.restarted", { pid: restartOp.result.pid })}</div>
           ) : null}
         </OpButton>
 
         <OpButton
           op={bootstrapOp}
-          label="Перевірити оточення (bootstrap.check)"
+          label={dt("sidecar.check")}
           onClick={checkEnv}
           onCancel={() => cancelOp?.("bootstrap.check")}
         />
@@ -160,16 +163,15 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
           {/* Головна відповідь методу — одним рядком, до всіх подробиць. */}
           <div className={bootstrap.ready ? "dp-op-msg dp-ok" : "dp-alert"}>
             {bootstrap.ready
-              ? "Система готова до роботи."
-              : "Працювати не можна, поки не зроблено те, що нижче."}
+              ? dt("sidecar.systemReady")
+              : dt("sidecar.systemBlocked")}
           </div>
 
           {bootstrap.actions?.length ? (
-            <ul className="dp-small">
-              {bootstrap.actions.map((action, index) => (
-                <li key={index}>{action}</li>
-              ))}
-            </ul>
+            <details className="dp-small">
+              <summary>{dt("sidecar.rawActions")}</summary>
+              <ul>{bootstrap.actions.map((action, index) => <li key={index}>{action}</li>)}</ul>
+            </details>
           ) : null}
 
           {/* Кнопка на кожну відсутню модель: контракт дає для цього
@@ -180,7 +182,7 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
                 <OpButton
                   key={model}
                   op={opState(ops, pullKey(model))}
-                  label={`Завантажити ${model}${required ? "" : " (необов'язково)"}`}
+                  label={`${dt("sidecar.pull", { model })}${required ? "" : ` (${dt("sidecar.optional")})`}`}
                   onClick={() => pullModel(model)}
                   onCancel={() => cancelOp?.(pullKey(model))}
                 />
@@ -189,46 +191,46 @@ export default function SidecarSection({ ops, run, cancelOp, note }) {
           ) : null}
 
           <dl className="dp-kv">
-            <dt>ОС</dt>
+            <dt>{dt("sidecar.os")}</dt>
             <dd className={bootstrap.platform?.supported ? undefined : "dp-err"}>
               {bootstrap.platform?.name} {bootstrap.platform?.release} ({bootstrap.platform?.arch})
               {bootstrap.platform?.supported ? "" : ` — ${bootstrap.platform?.reason}`}
             </dd>
             <dt>Ollama</dt>
             <dd className={bootstrap.ollama?.isAvailable ? "dp-ok" : "dp-err"}>
-              {bootstrap.ollama?.isAvailable ? "запущена" : "не відповідає"} ·{" "}
+              {dt(bootstrap.ollama?.isAvailable ? "sidecar.running" : "sidecar.notResponding")} ·{" "}
               {bootstrap.ollama?.baseUrl}
               {bootstrap.ollama?.error ? ` · ${bootstrap.ollama.error}` : ""}
             </dd>
-            <dt>Обов'язкові моделі</dt>
+            <dt>{dt("sidecar.requiredModels")}</dt>
             <dd>
               <ModelChips models={models?.required} missing={models?.missingRequired} />
             </dd>
-            <dt>Необов'язкові моделі</dt>
+            <dt>{dt("sidecar.optionalModels")}</dt>
             <dd>
               <ModelChips models={models?.optional} missing={models?.missingOptional} />
             </dd>
             {models?.autoPulled?.length ? (
               <>
-                <dt>Завантажено автоматично</dt>
+                <dt>{dt("sidecar.autoPulled")}</dt>
                 <dd className="dp-ok">{models.autoPulled.join(", ")}</dd>
               </>
             ) : null}
-            <dt>Встановлені моделі</dt>
+            <dt>{dt("sidecar.installedModels")}</dt>
             <dd>{bootstrap.ollama?.installedModels?.join(", ") || "—"}</dd>
-            <dt>Теки сканування</dt>
+            <dt>{dt("sidecar.scanDirs")}</dt>
             <dd>
               {bootstrap.scanDirs?.length ? (
                 <details>
-                  <summary>{bootstrap.scanDirs.length} тек</summary>
+                  <summary>{dt("sidecar.folders", { count: bootstrap.scanDirs.length })}</summary>
                   {bootstrap.scanDirs.join("\n")}
                 </details>
               ) : (
-                <span className="muted">— (адаптер ОС не працює)</span>
+                <span className="muted">{dt("sidecar.adapterUnavailable")}</span>
               )}
             </dd>
-            <dt>Перевірено</dt>
-            <dd>{formatCheckedAt(bootstrap.checkedAt)}</dd>
+            <dt>{dt("sidecar.checked")}</dt>
+            <dd>{formatCheckedAt(bootstrap.checkedAt, i18n.resolvedLanguage === "uk" ? "uk-UA" : "en-US")}</dd>
           </dl>
         </>
       ) : null}

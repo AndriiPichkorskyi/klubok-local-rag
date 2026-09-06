@@ -11,6 +11,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatClock } from "./format";
+import { useTranslation } from "react-i18next";
+import { dt } from "./i18n";
 
 const LEVEL_CLASS = {
   error: "dp-err",
@@ -62,6 +64,7 @@ async function copyText(text) {
 }
 
 export default function ProgressLog({ entries, dropped = 0, onClear }) {
+  const { i18n } = useTranslation();
   const bodyRef = useRef(null);
 
   // Пауза — свідоме рішення людини (кнопка). «Липнення» — те, де стоїть скрол.
@@ -124,13 +127,13 @@ export default function ProgressLog({ entries, dropped = 0, onClear }) {
   /** Копіюємо саме те, що зараз видно: з фільтром і з чесною позначкою про зрізане. */
   const copy = useCallback(async () => {
     const header = [
-      `Журнал панелі розробника · ${new Date().toLocaleString("uk-UA")}`,
-      source === ALL_SOURCES ? "операції: усі" : `операція: ${source}`,
-      `рядків: ${visible.length}${dropped > 0 ? ` · зрізано старих рядків прогресу: ${dropped}` : ""}`,
+      `${dt("log.exportTitle")} · ${new Date().toLocaleString(i18n.language)}`,
+      source === ALL_SOURCES ? dt("log.exportAll") : dt("log.exportOne", { source }),
+      `${dt("log.exportRows", { count: visible.length })}${dropped > 0 ? ` · ${dt("log.exportClipped", { count: dropped })}` : ""}`,
     ].join("\n");
     const ok = await copyText(`${header}\n${visible.map(lineToText).join("\n")}\n`);
-    setCopied(ok ? "Скопійовано" : "Скопіювати не вдалося");
-  }, [dropped, source, visible]);
+    setCopied(ok ? dt("log.copied") : dt("log.copyFailed"));
+  }, [dropped, i18n.language, source, visible]);
 
   useEffect(() => {
     if (!copied) return undefined;
@@ -141,19 +144,19 @@ export default function ProgressLog({ entries, dropped = 0, onClear }) {
   return (
     <div className="dp-log">
       <div className="dp-log-head">
-        <span className="dp-section-title">Журнал прогресу</span>
+        <span className="dp-section-title">{dt("log.title")}</span>
 
         <span className="dp-log-tools">
-          <span className="dp-badge" title="рядків у журналі">
-            {source === ALL_SOURCES ? entries.length : `${visible.length} з ${entries.length}`}
+          <span className="dp-badge" title={dt("log.rows")}>
+            {source === ALL_SOURCES ? entries.length : dt("log.shown", { shown: visible.length, total: entries.length })}
           </span>
 
           {dropped > 0 ? (
             <span
               className="dp-badge"
-              title="Найстаріші рядки прогресу зрізані, щоб журнал не ріс безмежно. Старти, завершення і помилки лишаються."
+              title={dt("log.clippedHint")}
             >
-              зрізано {dropped}
+              {dt("log.clipped", { count: dropped })}
             </span>
           ) : null}
 
@@ -161,10 +164,10 @@ export default function ProgressLog({ entries, dropped = 0, onClear }) {
             className="dp-log-filter"
             value={source}
             onChange={(event) => setSource(event.target.value)}
-            title="Фільтр за операцією"
-            aria-label="Фільтр за операцією"
+            title={dt("log.filter")}
+            aria-label={dt("log.filter")}
           >
-            <option value={ALL_SOURCES}>усі операції</option>
+            <option value={ALL_SOURCES}>{dt("log.all")}</option>
             {sources.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -175,23 +178,23 @@ export default function ProgressLog({ entries, dropped = 0, onClear }) {
           <button
             type="button"
             onClick={() => setPaused((value) => !value)}
-            title={paused ? "Журнал не прокручується автоматично" : "Журнал їде за новими рядками"}
+            title={paused ? dt("log.pauseHint") : dt("log.autoHint")}
           >
-            {paused ? "Прокрутка: пауза" : "Прокрутка: авто"}
+            {paused ? dt("log.pause") : dt("log.auto")}
           </button>
 
           {!follow ? (
             <button type="button" onClick={goDown}>
-              Вниз
+              {dt("log.down")}
             </button>
           ) : null}
 
           <button type="button" onClick={copy} disabled={visible.length === 0}>
-            Копіювати
+            {dt("log.copy")}
           </button>
 
           <button type="button" onClick={onClear} disabled={entries.length === 0}>
-            Очистити
+            {dt("log.clear")}
           </button>
 
           {copied ? <span className="dp-small muted">{copied}</span> : null}
@@ -200,9 +203,9 @@ export default function ProgressLog({ entries, dropped = 0, onClear }) {
 
       <div className="dp-log-body" ref={bodyRef}>
         {entries.length === 0 ? (
-          <div className="muted">Журнал порожній. Запустіть будь-яку операцію.</div>
+          <div className="muted">{dt("log.empty")}</div>
         ) : visible.length === 0 ? (
-          <div className="muted">Для операції «{source}» рядків немає.</div>
+          <div className="muted">{dt("log.emptySource", { source })}</div>
         ) : (
           visible.map((entry) => (
             <div className="dp-log-line" key={entry.seq}>

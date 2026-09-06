@@ -2,14 +2,15 @@ import { useMemo } from "react";
 import { analyzeReport } from "./reportAnalytics";
 import { formatBytes } from "./format";
 import EChart from "./EChart";
+import { dt } from "./i18n";
 
 const AXIS_LABELS = {
-  search: "Пошук",
+  search: "charts.axes.search",
   xml: "XML",
   reorder: "Reorder",
-  systemPrompt: "Системний промпт",
+  systemPrompt: "charts.axes.prompt",
   seed: "Seed",
-  temperature: "Температура",
+  temperature: "charts.axes.temperature",
 };
 
 function palette() {
@@ -34,21 +35,21 @@ function pct(value) {
 }
 
 function seconds(value) {
-  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)} с` : "—";
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)} ${dt("charts.seconds")}` : "—";
 }
 
 function modelDescription(details) {
-  if (!details) return "не записано в цьому звіті";
+  if (!details) return dt("charts.noMetadata");
   return [
     details.parameterSize,
     details.quantizationLevel,
     Number.isFinite(details.sizeBytes) ? formatBytes(details.sizeBytes) : null,
     details.family,
-  ].filter(Boolean).join(" · ") || "метадані недоступні";
+  ].filter(Boolean).join(" · ") || dt("charts.metadataUnavailable");
 }
 
 function shortHash(value) {
-  return value ? `${value.slice(0, 12)}…` : "не записано в цьому звіті";
+  return value ? `${value.slice(0, 12)}…` : dt("charts.noMetadata");
 }
 
 function ChartCard({ title, hint, option, height = 320 }) {
@@ -74,7 +75,7 @@ export default function ReportCharts({ data }) {
   const axisItems = analytics.axisGroups.flatMap((group) =>
     group.values.map((item) => ({
       axis: group.axis,
-      label: `${AXIS_LABELS[group.axis] || group.axis}: ${item.value}`,
+      label: `${AXIS_LABELS[group.axis] ? dt(AXIS_LABELS[group.axis]) : group.axis}: ${item.value}`,
       value: item.passRate,
       total: item.total,
     })),
@@ -86,7 +87,7 @@ export default function ReportCharts({ data }) {
       data: axisItems.map((item) => item.label),
       axisLabel: { color: colors.muted, rotate: axisItems.length > 7 ? 35 : 0 },
     },
-    yAxis: { type: "value", min: 0, max: 100, name: "% успіху", axisLabel: { color: colors.muted } },
+    yAxis: { type: "value", min: 0, max: 100, name: dt("charts.successPct"), axisLabel: { color: colors.muted } },
     series: [{
       type: "bar",
       data: axisItems.map((item) => ({ value: item.value, itemStyle: { color: "#2563eb" }, total: item.total })),
@@ -94,7 +95,7 @@ export default function ReportCharts({ data }) {
     }],
     tooltip: {
       ...baseOption().tooltip,
-      formatter: ({ name, data: item }) => `${name}<br/><strong>${pct(item.value)}</strong><br/>спостережень: ${item.total}`,
+      formatter: ({ name, data: item }) => `${name}<br/><strong>${pct(item.value)}</strong><br/>${dt("charts.observations")}: ${item.total}`,
     },
   };
 
@@ -128,8 +129,8 @@ export default function ReportCharts({ data }) {
 
   const scatterOption = {
     ...baseOption(),
-    xAxis: { type: "value", name: "Середній час, с", axisLabel: { color: colors.muted } },
-    yAxis: { type: "value", min: 0, max: 100, name: "% успіху", axisLabel: { color: colors.muted } },
+    xAxis: { type: "value", name: dt("charts.averageTime"), axisLabel: { color: colors.muted } },
+    yAxis: { type: "value", min: 0, max: 100, name: dt("charts.successPct"), axisLabel: { color: colors.muted } },
     series: [{
       type: "scatter",
       data: analytics.scatter,
@@ -139,25 +140,25 @@ export default function ReportCharts({ data }) {
     tooltip: {
       ...baseOption().tooltip,
       formatter: ({ data: item }) =>
-        `<strong>${item.name}</strong><br/>успішність: ${pct(item.value[1])}<br/>час: ${item.value[0].toFixed(2)} с<br/>Ollama RAM: ${item.value[2] ? Math.round(item.value[2]) + " MB" : "—"}<br/>GPU: ${pct(item.value[3])}`,
+        `<strong>${item.name}</strong><br/>${dt("charts.success")}: ${pct(item.value[1])}<br/>${dt("charts.time")}: ${item.value[0].toFixed(2)} ${dt("charts.seconds")}<br/>Ollama RAM: ${item.value[2] ? Math.round(item.value[2]) + " MB" : "—"}<br/>GPU: ${pct(item.value[3])}`,
     },
   };
 
   const languageOption = {
     ...baseOption(),
-    legend: { data: ["Українська", "Англійська"], textStyle: { color: colors.text } },
+    legend: { data: [dt("charts.ukrainian"), dt("charts.english")], textStyle: { color: colors.text } },
     xAxis: { type: "category", data: analytics.languageBySearch.map((item) => item.search), axisLabel: { color: colors.muted } },
-    yAxis: { type: "value", min: 0, max: 100, name: "% успіху", axisLabel: { color: colors.muted } },
+    yAxis: { type: "value", min: 0, max: 100, name: dt("charts.successPct"), axisLabel: { color: colors.muted } },
     series: [
-      { name: "Українська", type: "bar", data: analytics.languageBySearch.map((item) => item.uk), itemStyle: { color: "#2563eb" } },
-      { name: "Англійська", type: "bar", data: analytics.languageBySearch.map((item) => item.en), itemStyle: { color: "#f59e0b" } },
+      { name: dt("charts.ukrainian"), type: "bar", data: analytics.languageBySearch.map((item) => item.uk), itemStyle: { color: "#2563eb" } },
+      { name: dt("charts.english"), type: "bar", data: analytics.languageBySearch.map((item) => item.en), itemStyle: { color: "#f59e0b" } },
     ],
   };
 
   const failureOption = {
     ...baseOption(),
     grid: { left: 210, right: 28, top: 12, bottom: 35 },
-    xAxis: { type: "value", min: 0, max: 100, name: "% провалів", axisLabel: { color: colors.muted } },
+    xAxis: { type: "value", min: 0, max: 100, name: dt("charts.failurePct"), axisLabel: { color: colors.muted } },
     yAxis: {
       type: "category",
       inverse: true,
@@ -169,7 +170,7 @@ export default function ReportCharts({ data }) {
       ...baseOption().tooltip,
       formatter: ({ dataIndex, value }) => {
         const item = analytics.failures[dataIndex];
-        return `<strong>${item.query}</strong><br/>мова: ${item.language}<br/>провалів: ${item.failed}/${item.attempts} (${Number(value).toFixed(1)}%)`;
+        return `<strong>${item.query}</strong><br/>${dt("charts.language")}: ${item.language}<br/>${dt("charts.failures")}: ${item.failed}/${item.attempts} (${Number(value).toFixed(1)}%)`;
       },
     },
   };
@@ -177,39 +178,39 @@ export default function ReportCharts({ data }) {
   return (
     <div className="dp-report-dashboard">
       <div className="dp-kpi-grid">
-        <div className="dp-kpi"><span>Повнота</span><strong>{analytics.actualRuns}/{analytics.expectedRuns}</strong><small>{pct(analytics.completeness)}</small></div>
-        <div className="dp-kpi"><span>Загальна успішність</span><strong>{pct(analytics.passRate)}</strong><small>{analytics.models.chat}</small></div>
-        <div className="dp-kpi"><span>Найкращий режим</span><strong>{analytics.best ? pct(analytics.best.passRate) : "—"}</strong><small title={analytics.best?.name}>{analytics.best?.name || "—"}</small></div>
-        <div className="dp-kpi"><span>Медіана / p95</span><strong>{seconds(analytics.medianTimeMs)}</strong><small>p95: {seconds(analytics.p95TimeMs)}</small></div>
-        <div className="dp-kpi"><span>Покриття метриками</span><strong>{pct(analytics.metricsCoverage)}</strong><small>GPU + Ollama RAM</small></div>
+        <div className="dp-kpi"><span>{dt("charts.completeness")}</span><strong>{analytics.actualRuns}/{analytics.expectedRuns}</strong><small>{pct(analytics.completeness)}</small></div>
+        <div className="dp-kpi"><span>{dt("charts.overallSuccess")}</span><strong>{pct(analytics.passRate)}</strong><small>{analytics.models.chat}</small></div>
+        <div className="dp-kpi"><span>{dt("charts.bestMode")}</span><strong>{analytics.best ? pct(analytics.best.passRate) : "—"}</strong><small title={analytics.best?.name}>{analytics.best?.name || "—"}</small></div>
+        <div className="dp-kpi"><span>{dt("charts.medianP95")}</span><strong>{seconds(analytics.medianTimeMs)}</strong><small>p95: {seconds(analytics.p95TimeMs)}</small></div>
+        <div className="dp-kpi"><span>{dt("charts.metricsCoverage")}</span><strong>{pct(analytics.metricsCoverage)}</strong><small>GPU + Ollama RAM</small></div>
       </div>
 
       <div className="dp-scroll-x">
         <table className="dp-table">
-          <thead><tr><th>Відтворюваність</th><th>Значення</th></tr></thead>
+          <thead><tr><th>{dt("charts.reproducibility")}</th><th>{dt("charts.value")}</th></tr></thead>
           <tbody>
-            <tr><td>Набір тестів (SHA-256)</td><td title={data.datasetHash || undefined}>{shortHash(data.datasetHash)}</td></tr>
-            <tr><td>Chat model</td><td>{analytics.models.chat}<div className="muted dp-small">{modelDescription(data.modelDetails?.chat)}</div></td></tr>
-            <tr><td>Embedding model</td><td>{analytics.models.embed}<div className="muted dp-small">{modelDescription(data.modelDetails?.embed)}</div></td></tr>
-            <tr><td>Середовище</td><td>{data.environment ? `${data.environment.platform} ${data.environment.release} · ${data.environment.arch} · ${data.environment.cpu} · ${data.environment.logicalCpus} логічних CPU · ${data.environment.totalMemoryMB} MB RAM · Node ${data.environment.nodeVersion}` : "не записано в цьому звіті"}</td></tr>
-            <tr><td>Матриця</td><td>{data.benchmarkKind || "—"} · {analytics.rows.length} режимів · {data.totalCases ?? "—"} кейсів · {data.initialConcurrency ?? "—"} потоків</td></tr>
+            <tr><td>{dt("charts.dataset")}</td><td title={data.datasetHash || undefined}>{shortHash(data.datasetHash)}</td></tr>
+            <tr><td>{dt("charts.chatModel")}</td><td>{analytics.models.chat}<div className="muted dp-small">{modelDescription(data.modelDetails?.chat)}</div></td></tr>
+            <tr><td>{dt("charts.embeddingModel")}</td><td>{analytics.models.embed}<div className="muted dp-small">{modelDescription(data.modelDetails?.embed)}</div></td></tr>
+            <tr><td>{dt("charts.environment")}</td><td>{data.environment ? `${data.environment.platform} ${data.environment.release} · ${data.environment.arch} · ${data.environment.cpu} · ${data.environment.logicalCpus} ${dt("charts.logicalCpu")} · ${data.environment.totalMemoryMB} MB RAM · Node ${data.environment.nodeVersion}` : dt("charts.noMetadata")}</td></tr>
+            <tr><td>{dt("charts.matrix")}</td><td>{data.benchmarkKind || "—"} · {analytics.rows.length} {dt("charts.modes")} · {data.totalCases ?? "—"} {dt("charts.cases")} · {data.initialConcurrency ?? "—"} {dt("charts.threads")}</td></tr>
           </tbody>
         </table>
       </div>
 
       {analytics.completeness < 100 ? (
-        <div className="dp-alert">Звіт неповний: графіки побудовані лише за наявними результатами.</div>
+        <div className="dp-alert">{dt("charts.incomplete")}</div>
       ) : null}
 
       {analytics.axisGroups.length > 0 ? (
         <div className="dp-scroll-x">
           <table className="dp-table">
-            <thead><tr><th>Фактор</th><th>Найкраще значення</th><th>Успішність</th><th>Різниця max−min</th></tr></thead>
+            <thead><tr><th>{dt("charts.factor")}</th><th>{dt("charts.bestValue")}</th><th>{dt("reportTable.headers.success")}</th><th>{dt("charts.spread")}</th></tr></thead>
             <tbody>
               {analytics.axisGroups.map((group) => {
                 const ordered = [...group.values].sort((left, right) => right.passRate - left.passRate);
                 const spread = ordered.length > 1 ? ordered[0].passRate - ordered.at(-1).passRate : 0;
-                return <tr key={group.axis}><td>{AXIS_LABELS[group.axis] || group.axis}</td><td>{ordered[0].value}</td><td className="dp-num">{pct(ordered[0].passRate)}</td><td className="dp-num">{spread.toFixed(1)} п.п.</td></tr>;
+                return <tr key={group.axis}><td>{AXIS_LABELS[group.axis] ? dt(AXIS_LABELS[group.axis]) : group.axis}</td><td>{ordered[0].value}</td><td className="dp-num">{pct(ordered[0].passRate)}</td><td className="dp-num">{spread.toFixed(1)} {dt("reportTable.points")}</td></tr>;
               })}
             </tbody>
           </table>
@@ -219,7 +220,7 @@ export default function ReportCharts({ data }) {
       {repeatedSeedGroups.length > 0 ? (
         <div className="dp-scroll-x">
           <table className="dp-table">
-            <thead><tr><th>Стабільність за seed</th><th>Прогонів</th><th>Середнє</th><th>Мін.–макс.</th><th>σ</th><th>Значення</th></tr></thead>
+            <thead><tr><th>{dt("charts.seedStability")}</th><th>{dt("charts.runs")}</th><th>{dt("charts.average")}</th><th>{dt("charts.minMax")}</th><th>σ</th><th>{dt("charts.value")}</th></tr></thead>
             <tbody>
               {repeatedSeedGroups.map(([name, group]) => (
                 <tr key={name}>
@@ -238,28 +239,28 @@ export default function ReportCharts({ data }) {
       {axisImpact.length > 0 ? (
         <div className="dp-scroll-x">
           <table className="dp-table">
-            <thead><tr><th>Чутливість виводу до осі</th><th>Порівнянь кейсів</th><th>Вивід змінився</th><th>Побайтово однаковий</th><th>Висновок</th></tr></thead>
+            <thead><tr><th>{dt("charts.outputSensitivity")}</th><th>{dt("charts.caseComparisons")}</th><th>{dt("charts.outputChanged")}</th><th>{dt("charts.identical")}</th><th>{dt("charts.conclusion")}</th></tr></thead>
             <tbody>
               {axisImpact.map(([axis, impact]) => (
                 <tr key={axis}>
-                  <td>{AXIS_LABELS[axis] || axis}</td><td className="dp-num">{impact.cases}</td>
+                  <td>{AXIS_LABELS[axis] ? dt(AXIS_LABELS[axis]) : axis}</td><td className="dp-num">{impact.cases}</td>
                   <td className="dp-num">{Number.isFinite(impact.identicalPct) ? `${100 - impact.identicalPct}%` : "—"}</td>
                   <td className="dp-num">{impact.identical}/{impact.cases} ({impact.identicalPct}%)</td>
-                  <td className={impact.inert ? "dp-err" : "dp-ok"}>{impact.inert ? "вісь інертна" : "вісь впливає"}</td>
+                  <td className={impact.inert ? "dp-err" : "dp-ok"}>{dt(impact.inert ? "charts.axisInert" : "charts.axisAffects")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="muted dp-small">Це чутливість сирої відповіді, а не приріст якості: вісь може змінювати текст без зміни pass rate.</div>
+          <div className="muted dp-small">{dt("charts.sensitivityHint")}</div>
         </div>
       ) : null}
 
       <div className="dp-chart-grid">
-        {axisItems.length > 0 ? <ChartCard title="Вплив значень факторів" hint="усереднено за іншими осями" option={axisOption} /> : null}
-        {analytics.heatmap.searches.length > 1 && analytics.heatmap.prompts.length > 1 ? <ChartCard title="Heatmap: пошук × розміщення промпту" hint="середня успішність, %" option={heatmapOption} /> : null}
-        {analytics.scatter.length > 1 ? <ChartCard title="Якість проти швидкості" hint="вище й лівіше — краще; розмір = Ollama RAM" option={scatterOption} /> : null}
-        {analytics.languageBySearch.length > 0 ? <ChartCard title="Українські й англійські запити" hint="за способом пошуку" option={languageOption} /> : null}
-        {analytics.failures.length > 0 ? <ChartCard title="Найскладніші тестові запити" hint="частка режимів, у яких кейс провалився" option={failureOption} height={Math.max(320, analytics.failures.length * 30)} /> : null}
+        {axisItems.length > 0 ? <ChartCard title={dt("charts.factorImpact")} hint={dt("charts.factorHint")} option={axisOption} /> : null}
+        {analytics.heatmap.searches.length > 1 && analytics.heatmap.prompts.length > 1 ? <ChartCard title={dt("charts.heatmap")} hint={dt("charts.heatmapHint")} option={heatmapOption} /> : null}
+        {analytics.scatter.length > 1 ? <ChartCard title={dt("charts.qualitySpeed")} hint={dt("charts.qualitySpeedHint")} option={scatterOption} /> : null}
+        {analytics.languageBySearch.length > 0 ? <ChartCard title={dt("charts.languages")} hint={dt("charts.languagesHint")} option={languageOption} /> : null}
+        {analytics.failures.length > 0 ? <ChartCard title={dt("charts.hardest")} hint={dt("charts.hardestHint")} option={failureOption} height={Math.max(320, analytics.failures.length * 30)} /> : null}
       </div>
     </div>
   );

@@ -17,6 +17,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
+import { dt } from "./i18n";
 import { useDevRuntime } from "./useDevRuntime";
 import { useBenchmarkAxes } from "./useBenchmarkAxes";
 import { Splitter, useSplitter } from "./Splitter";
@@ -47,26 +49,26 @@ import "./dev.css";
 const TABS = [
   {
     id: "run",
-    label: "Прогін",
-    hint: "щоденне: повний прогін і окремі кроки пайплайна",
+    labelKey: "tabs.run",
+    hintKey: "tabs.runHint",
     owns: (key) => key.startsWith("pipeline.") || key.startsWith("full:"),
   },
   {
     id: "results",
-    label: "Результати",
-    hint: "що вийшло: статистика бази, тести і їхні звіти",
+    labelKey: "tabs.results",
+    hintKey: "tabs.resultsHint",
     owns: (key) => key === "db.stats" || key.startsWith("tests.") || key.startsWith("reports."),
   },
   {
     id: "maintenance",
-    label: "Обслуговування",
-    hint: "рідкісні незворотні дії: очистка бази",
+    labelKey: "tabs.maintenance",
+    hintKey: "tabs.maintenanceHint",
     owns: (key) => key.startsWith("db.clear:"),
   },
   {
     id: "env",
-    label: "Оточення",
-    hint: "службове: sidecar, перевірка оточення, конфіг",
+    labelKey: "tabs.env",
+    hintKey: "tabs.envHint",
     owns: (key) =>
       key === "ping" ||
       key === "sidecarRestart" ||
@@ -100,6 +102,7 @@ function embedModelsOf(config) {
 }
 
 export default function DevPanel() {
+  const { i18n } = useTranslation();
   const {
     ops,
     run,
@@ -116,6 +119,10 @@ export default function DevPanel() {
   const [reportsRefresh, setReportsRefresh] = useState(0);
   const [statsRefresh, setStatsRefresh] = useState(0);
   const [activeTab, setActiveTab] = useState(readStoredTab);
+  const translatedTabs = useMemo(
+    () => TABS.map((tab) => ({ ...tab, label: dt(tab.labelKey), hint: dt(tab.hintKey) })),
+    [i18n.language],
+  );
 
   // Один власник системного монітора на всю панель. Окремі секції змонтовані
   // одночасно, тому їхні start/stop змагалися й могли вимкнути метрики посеред прогону.
@@ -219,18 +226,18 @@ export default function DevPanel() {
   return (
     <main className="dp-root">
       <header className="dp-head">
-        <span className="dp-title">Панель розробника</span>
+        <span className="dp-title">{dt("title")}</span>
         <span className="row dp-small muted">
           {anyRunning ? (
-            <span className="dp-warn">виконується операцій: {runningCount}</span>
+            <span className="dp-warn">{dt("running", { count: runningCount })}</span>
           ) : (
-            <span>операцій не виконується</span>
+            <span>{dt("idle")}</span>
           )}
-          <span className="dp-badge">⌘D — режим користувача</span>
+          <span className="dp-badge">{dt("userMode")}</span>
         </span>
       </header>
 
-      <DevTabs tabs={TABS} active={activeTab} onSelect={selectTab} runningCounts={runningCounts} />
+      <DevTabs tabs={translatedTabs} active={activeTab} onSelect={selectTab} runningCounts={runningCounts} />
 
       <div className="dp-body" ref={splitContainerRef} style={{ "--split-size": `${splitSize}%` }}>
         <div className="dp-col dp-col-main" ref={colRef}>

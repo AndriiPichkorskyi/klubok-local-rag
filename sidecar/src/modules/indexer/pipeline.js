@@ -202,6 +202,19 @@ export async function runVectorize(onProgress, signal = null) {
 async function runVectorizeLocked(onProgress, signal = null) {
   const vecCol = vectorizedColumnFor(config.embedModelName);
   await db.addColumnIfMissing("apps", `${vecCol} BOOLEAN DEFAULT 0`);
+
+  // Прапорець «векторизовано» живе в SQLite, а самі вектори — в LanceDB, і ці
+  // двоє можуть розійтися: теку моделі не поклали в архів розповсюдження,
+  // видалили руками або очистили стороннім інструментом. Прапорець без бази —
+  // брехня, через яку векторизація мовчки не робила НІЧОГО: список програм до
+  // обробки виходив порожнім, крок завершувався успіхом і нулем чанків.
+  if (!(await db.hasVectorTable())) {
+    onProgress(
+      `Векторної бази для ${config.embedModelName} немає — скидаємо прапорці векторизації.`,
+    );
+    await db.resetVectorizedFlags(null, [config.embedModelName]);
+  }
+
   // Вибираємо тільки ті програми, які ще не були векторизовані
   const apps = await db.sqliteDb.all(`SELECT * FROM apps WHERE ${vecCol} = 0 OR ${vecCol} IS NULL`);
 

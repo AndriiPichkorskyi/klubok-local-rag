@@ -68,10 +68,14 @@ Vision-модель **не знає**, як виглядають програм�
 
 | Метод | params | Опис |
 |---|---|---|
-| `walkthrough.start` | `{appId, goal, docId?, docTitle?}` | Створює сесію, готує документацію. Повертає `{sessionId, appName, planned[], docs[], docsSource, docsMatched, docsMessage, journalPath}` |
+| `walkthrough.start` | `{appId, goal, docId?, docTitle?, language?}` | Створює сесію, готує документацію. Повертає `{sessionId, appName, language, planned[], docs[], docsSource, docsMatched, docsMessage, journalPath}` |
 | `walkthrough.step` | `{sessionId, screenshotPath?, frontmost?, stepSource?, userConfirmed?}` | Наступний крок. `screenshotPath` потрібен лише зору; ручний режим кадру не просить |
 | `walkthrough.stuck` | `{sessionId, screenshotPath}` | Користувач не знайшов елемент: повторний аналіз іншим промптом |
 | `walkthrough.finish` | `{sessionId}` | Закриває сесію, звільняє ресурси |
+
+`language` — `"uk"` або `"en"`; значення фіксується на всю сесію і керує
+мовою згенерованих кроків та користувацьких fallback-повідомлень. Якщо поле не
+передано, використовується `"uk"`, що зберігає попередню поведінку модуля.
 
 ### Документацію бере той самий пошук, що й рекомендацію
 

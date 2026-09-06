@@ -3,58 +3,53 @@
  * З бекендом говоримо ВИКЛЮЧНО через src/ipc.js.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { query as rpcQuery, jobCancel, onProgress, newRef } from "../ipc";
+import { normalizeLanguage } from "../i18n";
 import { normalizeAnswer } from "./parseAnswer";
 
 /** Перетворює технічну помилку на пояснення для людини. Стек не показуємо. */
-export function humanizeError(error) {
+export function humanizeError(error, t) {
   const raw =
     typeof error === "string" ? error : error?.message ? String(error.message) : String(error ?? "");
   const text = raw.toLowerCase();
 
   if (/ollama|11434|econnrefused|fetch failed|failed to fetch/.test(text)) {
     return {
-      title: "Схоже, Ollama не запущена",
-      hint:
-        "Пошук працює локально через Ollama. Відкрийте Термінал, виконайте «ollama serve» " +
-        "і спробуйте ще раз. Якщо Ollama встановлена, але моделі немає — завантажте її в режимі розробника (⌘D).",
+      title: t("error.ollamaTitle"),
+      hint: t("error.ollamaHint"),
     };
   }
   if (/не підключен|канал до sidecar|з'єднання розірвано|з.єднання/.test(text)) {
     return {
-      title: "Немає зв'язку з бекендом",
-      hint:
-        "Внизу вікна показано стан підключення. Якщо там «немає зв'язку» — перезапустіть застосунок " +
-        "(npm run app) або сам sidecar (npm run sidecar:dev).",
+      title: t("error.backendTitle"),
+      hint: t("error.backendHint"),
     };
   }
   if (/час очікування|timeout/.test(text)) {
     return {
-      title: "Бекенд не відповів вчасно",
-      hint:
-        "Модель могла надто довго думати або зависнути. Спробуйте ще раз; якщо повторюється — " +
-        "перевірте, чи працює Ollama, і чи не завантажена система іншими задачами.",
+      title: t("error.timeoutTitle"),
+      hint: t("error.timeoutHint"),
     };
   }
   if (/lancedb|database|таблиц|table|no such/.test(text)) {
     return {
-      title: "База знань ще не готова",
-      hint:
-        "Схоже, індекс програм порожній або пошкоджений. Запустіть повну синхронізацію " +
-        "в режимі розробника (⌘D → повний цикл) і поверніться сюди.",
+      title: t("error.databaseTitle"),
+      hint: t("error.databaseHint"),
     };
   }
   return {
-    title: "Пошук не вдався",
+    title: t("error.searchFailed"),
     hint: raw.trim()
-      ? `Бекенд повідомив: ${raw.trim()}. Спробуйте ще раз або перезапустіть застосунок.`
-      : "Спробуйте ще раз або перезапустіть застосунок.",
+      ? t("error.backendSaid", { message: raw.trim() })
+      : t("error.genericHint"),
   };
 }
 
 const IDLE_PROGRESS = { msg: "", pct: null };
 
 export function useSearch() {
+  const { i18n } = useTranslation();
   const [phase, setPhase] = useState("idle"); // idle | searching | done | error
   const [progress, setProgress] = useState(IDLE_PROGRESS);
   const [answer, setAnswer] = useState(null);
@@ -112,10 +107,11 @@ export function useSearch() {
     setAnswer(null);
     setError(null);
     setElapsedMs(0);
-    setProgress({ msg: "Готуємо пошук…", pct: null });
+    setProgress({ msg: "", pct: null });
     setPhase("searching");
 
-    rpcQuery(trimmed, {}, clientRefRef.current)
+    const language = normalizeLanguage(i18n.language) || "en";
+    rpcQuery(trimmed, { language }, clientRefRef.current)
       .then((result) => {
         if (runRef.current !== runId) return; // запит скасовано або замінено новим
         activeRef.current = false;
@@ -126,11 +122,11 @@ export function useSearch() {
       .catch((err) => {
         if (runRef.current !== runId) return;
         activeRef.current = false;
-        setError(humanizeError(err));
+        setError(err);
         setProgress(IDLE_PROGRESS);
         setPhase("error");
       });
-  }, []);
+  }, [i18n.language]);
 
   /** Скасування: відв'язуємось від результату і просимо бекенд зупинитись. */
   const cancel = useCallback(() => {

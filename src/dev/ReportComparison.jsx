@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import EChart from "./EChart";
+import { dt } from "./i18n";
 
 function pct(value) {
   return Number.isFinite(value) ? `${value.toFixed(1)}%` : "—";
 }
 
 function seconds(value) {
-  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)} с` : "—";
+  return Number.isFinite(value) ? `${(value / 1000).toFixed(2)} ${dt("common.seconds")}` : "—";
 }
 
 function modelLabel(item) {
@@ -14,8 +15,8 @@ function modelLabel(item) {
 }
 
 function modelInfo(details) {
-  if (!details) return "метаданих немає";
-  return [details.parameterSize, details.quantizationLevel].filter(Boolean).join(" · ") || "метаданих немає";
+  if (!details) return dt("comparison.noMetadata");
+  return [details.parameterSize, details.quantizationLevel].filter(Boolean).join(" · ") || dt("comparison.noMetadata");
 }
 
 function shortHash(value) {
@@ -58,20 +59,20 @@ export default function ReportComparison({ items }) {
 
   const qualityOption = {
     ...base,
-    legend: { data: ["Загалом", "Українська", "Англійська"], textStyle: { color: theme.text } },
+    legend: { data: [dt("comparison.total"), dt("comparison.ukrainian"), dt("comparison.english")], textStyle: { color: theme.text } },
     xAxis: { type: "category", data: items.map(modelLabel), axisLabel: { color: theme.muted, rotate: items.length > 3 ? 30 : 0 } },
-    yAxis: { type: "value", min: 0, max: 100, name: "% успіху", axisLabel: { color: theme.muted } },
+    yAxis: { type: "value", min: 0, max: 100, name: dt("comparison.successPct"), axisLabel: { color: theme.muted } },
     series: [
-      { name: "Загалом", type: "bar", data: items.map((item) => item.passRate), itemStyle: { color: "#2563eb" } },
-      { name: "Українська", type: "bar", data: items.map((item) => item.ukPassRate), itemStyle: { color: "#15803d" } },
-      { name: "Англійська", type: "bar", data: items.map((item) => item.enPassRate), itemStyle: { color: "#f59e0b" } },
+      { name: dt("comparison.total"), type: "bar", data: items.map((item) => item.passRate), itemStyle: { color: "#2563eb" } },
+      { name: dt("comparison.ukrainian"), type: "bar", data: items.map((item) => item.ukPassRate), itemStyle: { color: "#15803d" } },
+      { name: dt("comparison.english"), type: "bar", data: items.map((item) => item.enPassRate), itemStyle: { color: "#f59e0b" } },
     ],
   };
 
   const scatterOption = {
     ...base,
-    xAxis: { type: "value", name: "Середній час, с", axisLabel: { color: theme.muted } },
-    yAxis: { type: "value", min: 0, max: 100, name: "% успіху", axisLabel: { color: theme.muted } },
+    xAxis: { type: "value", name: dt("comparison.averageTime"), axisLabel: { color: theme.muted } },
+    yAxis: { type: "value", min: 0, max: 100, name: dt("comparison.successPct"), axisLabel: { color: theme.muted } },
     series: [{
       type: "scatter",
       data: items.map((item) => ({
@@ -83,7 +84,7 @@ export default function ReportComparison({ items }) {
     }],
     tooltip: {
       ...base.tooltip,
-      formatter: ({ data }) => `<strong>${data.name}</strong><br/>успішність: ${pct(data.value[1])}<br/>час: ${data.value[0].toFixed(2)} с<br/>RAM: ${data.value[2] ? Math.round(data.value[2]) + " MB" : "—"}<br/>GPU: ${pct(data.value[3])}`,
+      formatter: ({ data }) => `<strong>${data.name}</strong><br/>${dt("comparison.success")}: ${pct(data.value[1])}<br/>${dt("comparison.time")}: ${data.value[0].toFixed(2)} ${dt("common.seconds")}<br/>RAM: ${data.value[2] ? Math.round(data.value[2]) + " MB" : "—"}<br/>GPU: ${pct(data.value[3])}`,
     },
   };
 
@@ -96,7 +97,7 @@ export default function ReportComparison({ items }) {
     series: [{ type: "heatmap", data: view.matrix, label: { show: true, formatter: ({ value }) => `${value[2]}%\n(n=${value[3]})`, color: theme.text } }],
     tooltip: {
       ...base.tooltip,
-      formatter: ({ value }) => `${view.chats[value[0]]}<br/>${view.embeds[value[1]]}<br/><strong>${value[2]}%</strong><br/>звітів: ${value[3]}`,
+      formatter: ({ value }) => `${view.chats[value[0]]}<br/>${view.embeds[value[1]]}<br/><strong>${value[2]}%</strong><br/>${dt("comparison.reportsCount", { count: value[3] })}`,
     },
   };
 
@@ -109,35 +110,35 @@ export default function ReportComparison({ items }) {
   return (
     <div className="dp-report-dashboard">
       <div className="dp-report-block-title">
-        <strong>Порівняння звітів ({items.length})</strong>
-        <div className="muted dp-small">Один рядок — один окремий JSON-прогін.</div>
+        <strong>{dt("comparison.title", { count: items.length })}</strong>
+        <div className="muted dp-small">{dt("comparison.oneRow")}</div>
       </div>
       {duplicatePairs > 0 ? (
         <div className="dp-alert dp-alert-info">
-          Деякі звіти мають однакову пару моделей. У matrix вони об’єднані як повторні прогони; перевірте, що це очікувані повтори, а не помилка перемикання моделей.
+          {dt("comparison.duplicates")}
         </div>
       ) : null}
       {items.some((item) => item.completeness < 100) ? (
-        <div className="dp-alert">У вибірці є незавершені звіти; їхні показники не можна напряму порівнювати з повними.</div>
+        <div className="dp-alert">{dt("comparison.incomplete")}</div>
       ) : null}
       {items.some((item) => !item.datasetHash) ? (
-        <div className="dp-alert">Принаймні один старий звіт не містить dataset hash, тому тотожність тестових наборів не підтверджена.</div>
+        <div className="dp-alert">{dt("comparison.noHash")}</div>
       ) : datasetKeys.size > 1 ? (
-        <div className="dp-alert">Вибрані звіти мають різні тестові набори. Таке порівняння не є науково коректним.</div>
+        <div className="dp-alert">{dt("comparison.differentDatasets")}</div>
       ) : null}
       {items.some((item) => !item.environment) || environmentKeys.size > 1 ? (
-        <div className="dp-alert dp-alert-info">Середовище виконання відрізняється або не записане в старих звітах. Порівнюйте ресурсні метрики обережно.</div>
+        <div className="dp-alert dp-alert-info">{dt("comparison.environments")}</div>
       ) : null}
 
       <div className="dp-scroll-x">
         <table className="dp-table">
-          <thead><tr><th>Chat model</th><th>Embedding</th><th>Набір</th><th>Режимів</th><th>Повнота</th><th>Успішність</th><th>UK / EN</th><th>Час avg / p95</th><th>t/s</th><th>Ollama RAM</th><th>GPU</th><th>Метрики</th><th>Потоки</th></tr></thead>
+          <thead><tr><th>{dt("comparison.chatModel")}</th><th>{dt("comparison.embeddingModel")}</th><th>{dt("comparison.headers.dataset")}</th><th>{dt("comparison.headers.modes")}</th><th>{dt("comparison.headers.completeness")}</th><th>{dt("comparison.headers.success")}</th><th>UK / EN</th><th>{dt("comparison.headers.time")}</th><th>t/s</th><th>Ollama RAM</th><th>GPU</th><th>{dt("comparison.headers.metrics")}</th><th>{dt("comparison.headers.threads")}</th></tr></thead>
           <tbody>
             {items.map((item) => (
               <tr key={item.name} title={item.name}>
                 <td>{item.models.chat}<div className="muted dp-small">{modelInfo(item.modelDetails?.chat)}</div></td>
                 <td>{item.models.embed}<div className="muted dp-small">{modelInfo(item.modelDetails?.embed)}</div></td>
-                <td title={item.datasetHash || "Хеш не записаний"}>{shortHash(item.datasetHash)}</td>
+                <td title={item.datasetHash || dt("comparison.hashMissing")}>{shortHash(item.datasetHash)}</td>
                 <td className="dp-num">{item.modeCount}</td>
                 <td className="dp-num">{item.actualRuns}/{item.expectedRuns} ({pct(item.completeness)})</td>
                 <td className="dp-num">{pct(item.passRate)}</td>
@@ -155,9 +156,9 @@ export default function ReportComparison({ items }) {
       </div>
 
       <div className="dp-chart-grid">
-        <div className="dp-chart-card"><div className="dp-chart-title"><strong>Якість моделей і мов</strong></div><EChart option={qualityOption} style={{ height: 360 }} /></div>
-        <div className="dp-chart-card"><div className="dp-chart-title"><strong>Pareto: якість × час</strong><span className="muted dp-small">розмір = Ollama RAM</span></div><EChart option={scatterOption} style={{ height: 360 }} /></div>
-        {view.chats.length > 1 || view.embeds.length > 1 ? <div className="dp-chart-card"><div className="dp-chart-title"><strong>Матриця: chat × embedding</strong><span className="muted dp-small">успішність; n = звітів</span></div><EChart option={matrixOption} style={{ height: Math.max(330, view.embeds.length * 70) }} /></div> : null}
+        <div className="dp-chart-card"><div className="dp-chart-title"><strong>{dt("comparison.qualityLanguages")}</strong></div><EChart option={qualityOption} style={{ height: 360 }} /></div>
+        <div className="dp-chart-card"><div className="dp-chart-title"><strong>{dt("comparison.pareto")}</strong><span className="muted dp-small">{dt("comparison.sizeHint")}</span></div><EChart option={scatterOption} style={{ height: 360 }} /></div>
+        {view.chats.length > 1 || view.embeds.length > 1 ? <div className="dp-chart-card"><div className="dp-chart-title"><strong>{dt("comparison.matrix")}</strong><span className="muted dp-small">{dt("comparison.matrixHint")}</span></div><EChart option={matrixOption} style={{ height: Math.max(330, view.embeds.length * 70) }} /></div> : null}
       </div>
     </div>
   );

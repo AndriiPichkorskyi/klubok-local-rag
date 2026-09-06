@@ -21,14 +21,14 @@ export function formatBytes(bytes) {
 
 /** Час доби для журналу: 14:03:07. */
 export function formatClock(ts) {
-  return new Date(ts).toLocaleTimeString("uk-UA", { hour12: false });
+  return new Date(ts).toLocaleTimeString(i18n.resolvedLanguage === "uk" ? "uk-UA" : "en-US", { hour12: false });
 }
 
 /** Дата й час зі звіту або з mtime файлу. */
 export function formatDateTime(value) {
   if (!value) return "—";
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("uk-UA");
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(i18n.resolvedLanguage === "uk" ? "uk-UA" : "en-US");
 }
 
 /**
@@ -36,7 +36,7 @@ export function formatDateTime(value) {
  * а не Error — інакше повідомлення губиться і в інтерфейсі порожньо.
  */
 export function errorText(error) {
-  if (error == null) return "Невідома помилка.";
+  if (error == null) return dt("common.unknownError");
   if (typeof error === "string") return error;
   if (error.message) return String(error.message);
   try {
@@ -64,7 +64,7 @@ export function maskSecrets(value) {
 
 /** Короткий підсумок результату методу для рядка журналу. */
 export function summarizeResult(result) {
-  if (result === undefined || result === null) return "готово";
+  if (result === undefined || result === null) return dt("common.ready");
   if (typeof result === "boolean") return result ? "true" : "false";
   if (typeof result !== "object") return String(result);
 
@@ -80,10 +80,10 @@ export function summarizeResult(result) {
       parts.push(`${key}=${formatArray(item)}`);
     } else {
       const inner = Object.entries(item).map(([k, v]) => `${k}: ${formatLeaf(v)}`);
-      parts.push(`${key}={${inner.length === 0 ? "порожньо" : inner.join("; ")}}`);
+      parts.push(`${key}={${inner.length === 0 ? dt("common.empty") : inner.join("; ")}}`);
     }
   }
-  return parts.length > 0 ? parts.join(", ") : "готово";
+  return parts.length > 0 ? parts.join(", ") : dt("common.ready");
 }
 
 /**
@@ -91,7 +91,7 @@ export function summarizeResult(result) {
  * Якщо в елементів є впізнавана назва — показуємо перші кілька, інакше лише кількість.
  */
 function formatArray(items) {
-  if (items.length === 0) return "[порожньо]";
+  if (items.length === 0) return `[${dt("common.empty")}]`;
   if (items.every((item) => item === null || typeof item !== "object")) {
     return `[${items.join(", ")}]`;
   }
@@ -102,7 +102,7 @@ function formatArray(items) {
     const head = named.slice(0, 3).join(", ");
     return items.length > 3 ? `[${items.length}: ${head}, …]` : `[${head}]`;
   }
-  return `[${items.length} елементів]`;
+  return `[${dt("common.items", { count: items.length })}]`;
 }
 
 /** Значення другого рівня. Глибше не розгортаємо — це рядок статусу, не дамп. */
@@ -111,3 +111,5 @@ function formatLeaf(value) {
   if (typeof value === "object") return Array.isArray(value) ? `[${value.length}]` : "{…}";
   return String(value);
 }
+import i18n from "../i18n";
+import { dt } from "./i18n";

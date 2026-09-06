@@ -15,6 +15,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { rpc } from "../ipc";
+import { dt } from "./i18n";
 
 /** Крок плану, ще не запущений. */
 const pendingEntry = (step) => ({ ...step, status: "pending", startedAt: null, finishedAt: null, durationMs: null, result: undefined, error: null });
@@ -48,7 +49,7 @@ export function useFullRun({ run, cancelOp, note, onFinished }) {
       setState("running");
       setStartedAt(Date.now());
       setFinishedAt(null);
-      note?.("Повний прогін", `старт: ${plan.length} кроків поспіль`, "start");
+      note?.(dt("fullRun.operation"), dt("fullRun.managedStart", { count: plan.length }), "start");
 
       (async () => {
         let outcome = "done";
@@ -64,7 +65,7 @@ export function useFullRun({ run, cancelOp, note, onFinished }) {
           const stepStartedAt = Date.now();
           patchEntry(step.key, { status: "running", startedAt: stepStartedAt });
 
-          const finished = await run(step.key, `Прогін · ${step.label}`, (ref) =>
+          const finished = await run(step.key, dt("fullRun.stepOperation", { step: step.label }), (ref) =>
             rpc(step.method, step.params || {}, ref),
           );
 
@@ -124,12 +125,12 @@ export function useFullRun({ run, cancelOp, note, onFinished }) {
         setStopping(false);
         runningRef.current = false;
         note?.(
-          "Повний прогін",
+          dt("fullRun.operation"),
           outcome === "done"
-            ? "завершено: усі кроки виконано"
+            ? dt("fullRun.managedDone")
             : outcome === "cancelled"
-              ? "зупинено користувачем"
-              : `зупинено помилкою на кроці «${stoppedAt}»`,
+              ? dt("fullRun.managedCancelled")
+              : dt("fullRun.managedFailed", { step: stoppedAt }),
           outcome === "done" ? "done" : outcome === "cancelled" ? "info" : "error",
         );
         onFinished?.(outcome);

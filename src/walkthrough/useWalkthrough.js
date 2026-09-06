@@ -7,6 +7,7 @@
  * живий секундомір, рядок прогресу і кнопку «Скасувати» (job.cancel).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { rpc, jobCancel, onProgress, newRef, configGet } from "../ipc";
 import { ACTION } from "./states";
 import { buildEntry } from "./diagnostics";
@@ -63,16 +64,16 @@ export const BUSY = {
   MODE: "mode",
 };
 
-const BUSY_TEXT = {
-  [BUSY.START]: "Готуємо підказку…",
-  [BUSY.ACTIVATE]: "Виводимо програму наперед…",
-  [BUSY.CAPTURE]: "Робимо знімок екрана…",
-  [BUSY.STEP]: "Дивимось, що зараз на екрані…",
-  [BUSY.STUCK]: "Шукаємо той самий елемент інакше…",
-  [BUSY.LAUNCH]: "Запускаємо програму…",
-  [BUSY.FINISH]: "Закриваємо сесію…",
-  [BUSY.MANUAL]: "Наступний крок зі списку…",
-  [BUSY.MODE]: "Готуємо список кроків із довідки…",
+const BUSY_KEYS = {
+  [BUSY.START]: "walkthrough.preparing",
+  [BUSY.ACTIVATE]: "walkthrough.activating",
+  [BUSY.CAPTURE]: "walkthrough.capturing",
+  [BUSY.STEP]: "walkthrough.looking",
+  [BUSY.STUCK]: "walkthrough.stuckBusy",
+  [BUSY.LAUNCH]: "walkthrough.launching",
+  [BUSY.FINISH]: "walkthrough.finishing",
+  [BUSY.MANUAL]: "walkthrough.manualBusy",
+  [BUSY.MODE]: "walkthrough.modeBusy",
 };
 
 const UNKNOWN_METHOD_RE = /unknown\s*method|невідомий метод|немає методу|method\s+.*\s+not/i;
@@ -81,24 +82,20 @@ const UNKNOWN_METHOD_RE = /unknown\s*method|невідомий метод|нем
  * Технічна помилка → пояснення для людини. Стек не показуємо ніколи.
  * Три випадки мають власний вигляд, бо мають різні дії людини.
  */
-export function describeFailure(error, stage = "") {
+export function describeFailure(error, stage = "", t) {
   if (error instanceof MissingCommandError) {
     return {
       kind: "missing-command",
-      title: "Ця частина застосунку ще не готова",
-      hint:
-        `Вікно підказки просить у застосунку команду «${error.command}», ` +
-        "а її в цій збірці ще немає. Підказка не зможе бачити екран, поки команду не додадуть.",
+      title: t("walkthrough.missingCommandTitle"),
+      hint: t("walkthrough.missingCommandHint"),
       detail: error.command,
     };
   }
   if (error instanceof ScreenPermissionError) {
     return {
       kind: "screen-permission",
-      title: "Немає дозволу на запис екрана",
-      hint:
-        "Системні параметри → Конфіденційність і безпека → Запис екрана: увімкніть цей застосунок " +
-        "і запустіть його наново. Без дозволу підказка не бачить, що у вас на екрані.",
+      title: t("walkthrough.permissionTitle"),
+      hint: t("walkthrough.permissionHint"),
       detail: "",
     };
   }
@@ -106,25 +103,23 @@ export function describeFailure(error, stage = "") {
   if (UNKNOWN_METHOD_RE.test(raw)) {
     return {
       kind: "missing-method",
-      title: "Бекенд ще не вміє вести по кроках",
-      hint:
-        "Sidecar відповів, що методу walkthrough немає. Модуль покрокової підказки на бекенді " +
-        "ще не під'єднано — інтерфейс готовий і запрацює, щойно метод з'явиться.",
+      title: t("walkthrough.missingMethodTitle"),
+      hint: t("walkthrough.missingMethodHint"),
       detail: raw.trim(),
     };
   }
   if (/ollama|11434|econnrefused|fetch failed/i.test(raw)) {
     return {
       kind: "ollama",
-      title: "Схоже, Ollama не запущена",
-      hint: "Модель зору працює локально. Виконайте «ollama serve» і спробуйте ще раз.",
+      title: t("error.ollamaTitle"),
+      hint: t("error.ollamaHint"),
       detail: raw.trim(),
     };
   }
   return {
     kind: "error",
-    title: stage ? `Не вдалося: ${stage}` : "Не вдалося продовжити",
-    hint: raw.trim() ? `Бекенд повідомив: ${raw.trim()}` : "Спробуйте ще раз.",
+    title: t("walkthrough.failed"),
+    hint: raw.trim() ? t("walkthrough.backendSaid", { message: raw.trim() }) : t("common.retry"),
     detail: raw.trim(),
   };
 }
@@ -139,6 +134,7 @@ const IDLE_PROGRESS = { msg: "", pct: null };
  *        сире, не правлячи конфіг.
  */
 export function useWalkthrough(request, options = {}) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState("idle"); // idle | busy | step | error | finished
   const [busyKind, setBusyKind] = useState(null);
   const [step, setStep] = useState(null);
@@ -219,10 +215,10 @@ export function useWalkthrough(request, options = {}) {
       if (!activeRef.current || !payload) return;
       if (!clientRefRef.current || payload.ref !== clientRefRef.current) return;
       if (typeof payload.id === "number") jobIdRef.current = payload.id;
-      setProgress({
-        msg: typeof payload.msg === "string" ? payload.msg : "",
+      setProgress((previous) => ({
+        msg: previous.msg,
         pct: typeof payload.pct === "number" ? payload.pct : null,
-      });
+      }));
     });
     return () => {
       sub.then?.((un) => un()).catch(() => {});
@@ -247,10 +243,10 @@ export function useWalkthrough(request, options = {}) {
     setNote("");
     setError(null);
     setElapsedMs(0);
-    setProgress({ msg: BUSY_TEXT[kind] || "", pct: null });
+    setProgress({ msg: t(BUSY_KEYS[kind] || "walkthrough.preparing"), pct: null });
     setPhase("busy");
     return runId;
-  }, []);
+  }, [t]);
 
   const settle = useCallback((runId) => {
     if (runRef.current !== runId) return false; // виклик скасовано або замінено новим
@@ -262,11 +258,11 @@ export function useWalkthrough(request, options = {}) {
   const fail = useCallback(
     (runId, err, stage) => {
       if (!settle(runId)) return;
-      setError(describeFailure(err, stage));
+      setError(describeFailure(err, stage, t));
       setBusyKind(null);
       setPhase("error");
     },
-    [settle],
+    [settle, t],
   );
 
   /**
@@ -366,7 +362,7 @@ export function useWalkthrough(request, options = {}) {
           pushEntry({
             method,
             clientMs: Date.now() - startedAtManual,
-            error: describeFailure(err, "список кроків із довідки"),
+            error: describeFailure(err, "guide step list", t),
           });
           fail(runId, err, "список кроків із довідки");
         }
@@ -401,7 +397,7 @@ export function useWalkthrough(request, options = {}) {
         await wait(delayMs);
         if (runRef.current !== runId) return;
         setBusyKind(BUSY.CAPTURE);
-        setProgress({ msg: BUSY_TEXT[BUSY.CAPTURE], pct: null });
+        setProgress({ msg: t(BUSY_KEYS[BUSY.CAPTURE]), pct: null });
       }
 
       // 3. Знімок — уже з цільовою програмою в кадрі.
@@ -414,7 +410,7 @@ export function useWalkthrough(request, options = {}) {
           activation,
           activationDelayMs: delayMs,
           clientMs: Date.now() - startedAt,
-          error: describeFailure(err, "знімок екрана"),
+          error: describeFailure(err, "screenshot", t),
         });
         fail(runId, err, "знімок екрана");
         return;
@@ -428,7 +424,7 @@ export function useWalkthrough(request, options = {}) {
       if (runRef.current !== runId) return;
       // У вікні показуємо ПІДПИС, а не сире значення: коли система назви не
       // дала, це «інша програма», а не порожнеча і не шматок виводу lsappinfo.
-      setFrontmost(front ? frontmostLabel(front) : null);
+      setFrontmost(front ? frontmostLabel(front, t("walkthrough.otherApp")) : null);
 
       const params = { sessionId, screenshotPath: shot.path };
       // Повернення в режим зору з ручного — тим самим викликом, що й крок.
@@ -449,7 +445,7 @@ export function useWalkthrough(request, options = {}) {
       if (wantDebugRef.current) params.debug = true;
 
       setBusyKind(busy);
-      setProgress({ msg: BUSY_TEXT[busy] || "", pct: null });
+      setProgress({ msg: t(BUSY_KEYS[busy] || "walkthrough.looking"), pct: null });
       try {
         const result = await rpc(method, params, clientRefRef.current);
         if (!settle(runId)) return;
@@ -482,12 +478,12 @@ export function useWalkthrough(request, options = {}) {
           activation,
           activationDelayMs: delayMs,
           clientMs: Date.now() - startedAt,
-          error: describeFailure(err, "аналіз екрана"),
+          error: describeFailure(err, "screen analysis", t),
         });
         fail(runId, err, "аналіз екрана");
       }
     },
-    [acceptStep, beginBusy, fail, pushEntry, request, settle],
+    [acceptStep, beginBusy, fail, pushEntry, request, settle, t],
   );
 
   /**
@@ -577,7 +573,7 @@ export function useWalkthrough(request, options = {}) {
     try {
       const result = await rpc(
         "walkthrough.start",
-        { appId: request.appId, goal: request.goal, docId: request.docId || undefined },
+        { appId: request.appId, goal: request.goal, docId: request.docId || undefined, language: request.language || "uk" },
         clientRefRef.current,
       );
       if (!settle(runId)) return;
@@ -592,6 +588,7 @@ export function useWalkthrough(request, options = {}) {
       setSession({
         sessionId: safe.sessionId ?? null,
         appName: safe.appName || request.appName,
+        language: safe.language || request.language || "uk",
         planned: Array.isArray(safe.planned) ? safe.planned : [],
         stepSource: safe.stepSource || configRef.current.stepSource,
       });
@@ -600,7 +597,7 @@ export function useWalkthrough(request, options = {}) {
         setStepSource(safe.stepSource);
       }
       if (!sessionIdRef.current) {
-        setError(describeFailure(new Error("Бекенд не повернув sessionId"), "створення сесії"));
+        setError(describeFailure(new Error("Backend did not return sessionId"), "session creation", t));
         setBusyKind(null);
         setPhase("error");
         return;
@@ -609,7 +606,7 @@ export function useWalkthrough(request, options = {}) {
     } catch (err) {
       fail(runId, err, "створення сесії");
     }
-  }, [advance, beginBusy, fail, request, settle]);
+  }, [advance, beginBusy, fail, request, settle, t]);
 
   /** «Я не бачу цієї кнопки» — головний рятівний шлях сесії. */
   const stuck = useCallback(
@@ -652,9 +649,9 @@ export function useWalkthrough(request, options = {}) {
     if (typeof jobId === "number") jobCancel(jobId).catch(() => {});
     setProgress(IDLE_PROGRESS);
     setBusyKind(null);
-    setNote("Аналіз скасовано. Можна спробувати ще раз.");
+    setNote(t("walkthrough.cancelled"));
     setPhase(step ? "step" : "idle");
-  }, [step]);
+  }, [step, t]);
 
   /** Головна дія поточного стану (описи — у states.js). */
   const runAction = useCallback(
@@ -708,7 +705,7 @@ export function useWalkthrough(request, options = {}) {
   return {
     phase,
     busyKind,
-    busyText: BUSY_TEXT[busyKind] || "",
+    busyText: busyKind ? t(BUSY_KEYS[busyKind]) : "",
     step,
     session,
     error,

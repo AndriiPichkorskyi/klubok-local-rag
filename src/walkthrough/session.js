@@ -40,6 +40,7 @@ export function normalizeRequest(raw) {
     appName: clean(raw.appName) || appId,
     goal: clean(raw.goal),
     docId: cleanDocId(raw.docId),
+    language: normalizeLanguage(raw.language) || "uk",
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
   };
 }
@@ -66,6 +67,7 @@ export function readRequest(search = typeof location === "undefined" ? "" : loca
       appName: params.get("appName"),
       goal: params.get("goal"),
       docId: params.get("docId"),
+      language: params.get("language"),
     });
     if (fromUrl) return fromUrl;
   } catch {
@@ -89,3 +91,4 @@ export function clearRequest() {
 }
 
 export const REQUEST_KEY = KEY;
+import { normalizeLanguage } from "../i18n";

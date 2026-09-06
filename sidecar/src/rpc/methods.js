@@ -14,10 +14,11 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-import { config, reloadConfig, updateModels } from "../config/config.js";
+import { config, reloadConfig, updateModels, updateSearchMode } from "../config/config.js";
 import { db, vectorizedColumnFor } from "../services/db.service.js";
 import { check as bootstrapCheck, pullModel as bootstrapPullModel } from "../bootstrap/index.js";
-import { processQuery } from "../modules/rag/engine.js";
+import { normalizeResponseLanguage } from "../i18n/language.js";
+import { processQuery, SEARCH_MODES } from "../modules/rag/engine.js";
 import {
   runScanApps,
   runFetchDocs,
@@ -311,6 +312,18 @@ export const methods = {
   },
 
   /**
+   * Режим пошуку. Значення ті самі, що приймає `query` (SEARCH_MODES), і
+   * перевіряються тим самим списком — двох джерел правди тут бути не може.
+   */
+  async "config.setSearchMode"(params = {}) {
+    const mode = params.mode;
+    if (!SEARCH_MODES.includes(mode)) {
+      throw new Error(`Невідомий режим пошуку «${mode}». Дозволені: ${SEARCH_MODES.join(", ")}.`);
+    }
+    return updateSearchMode(mode);
+  },
+
+  /**
    * RAG-пошук: обгортка над processQuery().
    * `searchMode` і `excludeLocal` не обов'язкові: null означає «взяти з конфіга».
    * Невідомий searchMode движок відхиляє помилкою — мовчазний фолбек ховав би
@@ -319,12 +332,29 @@ export const methods = {
   async query(params = {}, ctx) {
     const text = params.text;
     if (!text || !String(text).trim()) throw new Error("Не вказано параметр `text`.");
+    const language = normalizeResponseLanguage(params.language, null);
     return await processQuery(
       String(text),
       (msg) => ctx.onProgress(msg, extractPct(msg)),
       params.searchMode ?? null,
       params.excludeLocal ?? null,
+      language ? { language } : null,
     );
+  },
+
+  /** Каталог програм лише для читання з уже згенерованої таблиці apps. */
+  async "catalog.apps"(params = {}) {
+    return await db.listApps(params);
+  },
+
+  /** Каталог завантажених довідок лише для читання з готових таблиць. */
+  async "catalog.guides"(params = {}) {
+    return await db.listGuides(params);
+  },
+
+  /** Повний текст однієї готової довідки; індексацію не запускає. */
+  async "catalog.guide"(params = {}) {
+    return await db.getGuide(params.id);
   },
 
   // Кожен метод пайплайна прокидає ctx.signal у функцію і повертає поле
@@ -538,10 +568,13 @@ export const methods = {
    * Тут, як і всюди в цьому файлі, лише прокидання params і ctx.
    */
   async "walkthrough.start"(params = {}, ctx) {
-    return await walkthrough.start(params, {
-      signal: ctx.signal,
-      onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
-    });
+    return await walkthrough.start(
+      { ...params, language: normalizeResponseLanguage(params.language, "uk") },
+      {
+        signal: ctx.signal,
+        onProgress: (msg, pct = null) => ctx.onProgress(msg, pct),
+      },
+    );
   },
 
   /**

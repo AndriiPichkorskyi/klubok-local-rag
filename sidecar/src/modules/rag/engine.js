@@ -11,9 +11,17 @@ import { scraper } from "../../services/scraper.service.js";
 import { jsonrepair } from "jsonrepair";
 import { ollama } from "../../services/ollama.service.js";
 import { generatePrompt } from "./prompts.js";
+import { localized, normalizeResponseLanguage } from "../../i18n/language.js";
 
-/** Дозволені режими пошуку. Значення поза списком — помилка виклику, а не тихий фолбек. */
-export const SEARCH_MODES = ["vector", "fts", "hybrid"];
+/**
+ * Дозволені режими пошуку. Значення поза списком — помилка виклику, а не тихий фолбек.
+ *
+ * `auto` — це не четвертий алгоритм, а чесне ім'я для того, що система робила
+ * й раніше, тільки мовчки: якщо векторного індексу поточної моделі немає,
+ * `searchSimilar` повертає порожньо і працює сам лише FTS. Тепер цей вибір
+ * робиться явно ДО пошуку, а фактичний режим видно в `retrievalStats.searchMode`.
+ */
+export const SEARCH_MODES = ["vector", "fts", "hybrid", "auto"];
 
 /**
  * Основна функція обробки запиту.
@@ -23,7 +31,7 @@ export const SEARCH_MODES = ["vector", "fts", "hybrid"];
  * @param {string|null} searchMode - Режим пошуку; null = взяти config.rag.searchMode.
  * @param {boolean|null} excludeLocal - Відкинути локальну довідку; null = config.rag.excludeLocalDocs.
  * @param {Object|null} overrides - Точкове перевизначення осей генерації на ОДИН виклик:
- *        `{seed, temperature}`. Потрібне бенчмарку з віссю `seed: "random"`: там кожен
+ *        `{seed, temperature, language}`. Потрібне бенчмарку з віссю `seed: "random"`: там кожен
  *        кейс має власне зерно, а `config.rag.seed` — глобальний і спільний для трьох
  *        паралельних задач (p-limit), тож підміняти його на кожен запит означало б
  *        гонку і зерно «сусіда» в звіті. Незадане поле = значення з конфіга, тобто
@@ -46,7 +54,11 @@ export async function processQuery(
       `Невідомий searchMode «${searchMode}». Дозволені: ${SEARCH_MODES.join(", ")}.`,
     );
   }
-  const mode = searchMode ?? config.rag.searchMode;
+  const requestedMode = searchMode ?? config.rag.searchMode;
+  // `auto` вирішується тут, до першого звернення до бази: є індекс — працюємо
+  // гібридно (вектори + FTS + RRF), немає — чесно лишається сам FTS.
+  const mode =
+    requestedMode === "auto" ? ((await db.hasVectorTable()) ? "hybrid" : "fts") : requestedMode;
   const skipLocal =
     typeof excludeLocal === "boolean" ? excludeLocal : config.rag.excludeLocalDocs === true;
 
@@ -58,6 +70,7 @@ export async function processQuery(
     overrides && overrides.temperature !== undefined
       ? overrides.temperature
       : config.rag.temperature;
+  const language = normalizeResponseLanguage(overrides?.language, null);
 
   let relevantChunks = [];
 
@@ -106,7 +119,10 @@ export async function processQuery(
 
   // МЕТРИКИ ПОШУКУ
   let retrievalStats = {
+    // Фактичний режим і те, що просили: для `auto` вони різні, і саме різниця
+    // пояснює, чому відповідь могла бути слабшою за звичайну.
     searchMode: mode,
+    searchModeRequested: requestedMode,
     excludeLocal: skipLocal,
     // Фактичні осі генерації цього виклику. Для випадкового зерна це ЄДИНЕ
     // місце, де видно, чим саме отримано відповідь.
@@ -130,7 +146,12 @@ export async function processQuery(
 
   if (relevantChunks.length === 0) {
     return {
-      response: "Не вдалося знайти жодних релевантних інструментів для вашого запиту.",
+      response: language
+        ? localized(language, {
+            uk: "Не вдалося знайти жодних релевантних інструментів для вашого запиту.",
+            en: "No relevant tools were found for your request.",
+          })
+        : "Не вдалося знайти жодних релевантних інструментів для вашого запиту.",
       rawLlmOutput: null,
       recommendedApp: "NOT_FOUND",
       alternativeApps: [],
@@ -243,6 +264,7 @@ export async function processQuery(
     config.rag.enableXmlTags,
     config.rag.enableJsonFormat,
     systemPromptMode,
+    language,
   );
 
   // 4. Генеруємо відповідь
@@ -283,16 +305,25 @@ export async function processQuery(
         responseText = parsed.reason;
       } else {
         if (parsed.reason === "INVALID_QUERY") {
-          responseText = "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.";
+          responseText = localized(language || "uk", {
+            uk: "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.",
+            en: "Your request seems unclear or contains random characters. Please rephrase it.",
+          });
           recommendedApp = "INVALID_QUERY";
         } else {
-          responseText = parsed.reason || "На жаль, я не знайшов на вашому Mac програми, яка б підходила для цього завдання.";
+          responseText = localized(language || "uk", {
+            uk: "На жаль, я не знайшов на вашому Mac програми, яка б підходила для цього завдання.",
+            en: "I couldn't find an app on your Mac that is suitable for this task.",
+          });
           recommendedApp = "NOT_FOUND";
         }
       }
     } catch (e) {
       console.error("JSON parsing error:", e.message, "\n--- СИРА ВІДПОВІДЬ LLM ---\n", responseText, "\n--------------------------");
-      responseText = `Помилка обробки відповіді LLM: ${e.message}\n\n**Сира відповідь моделі:**\n\`\`\`text\n${responseText || "<порожньо>"}\n\`\`\``;
+      responseText = localized(language || "uk", {
+        uk: `Помилка обробки відповіді LLM: ${e.message}`,
+        en: `The LLM response could not be processed: ${e.message}`,
+      });
       recommendedApp = "ERROR";
     }
   } else {
@@ -313,10 +344,16 @@ export async function processQuery(
     // так само, як відсутній тег, а не віддаємо сирий текст LLM разом із тегом.
     if (!recommendedApp) {
       if (responseText.includes("INVALID_QUERY")) {
-        responseText = "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.";
+        responseText = localized(language || "uk", {
+          uk: "Здається, ваш запит не зовсім зрозумілий або містить випадкові символи. Будь ласка, уточніть його.",
+          en: "Your request seems unclear or contains random characters. Please rephrase it.",
+        });
         recommendedApp = "INVALID_QUERY";
       } else {
-        responseText = "На жаль, я не знайшов на вашому Mac програми, яка б підходила для цього завдання.";
+        responseText = localized(language || "uk", {
+          uk: "На жаль, я не знайшов на вашому Mac програми, яка б підходила для цього завдання.",
+          en: "I couldn't find an app on your Mac that is suitable for this task.",
+        });
         recommendedApp = "NOT_FOUND";
       }
     }

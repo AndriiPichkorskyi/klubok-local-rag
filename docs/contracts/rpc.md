@@ -48,7 +48,11 @@ WebSocket не обмежений політикою CORS, тому сторін
 | `bootstrap.pullModel` | `{model}` | `ollama pull` з прогресом |
 | `config.get` | — | поточний конфіг |
 | `config.reload` | — | `reloadConfig()` — перечитати JSON з диска |
-| `query` | `{text, searchMode?, excludeLocal?}` | `processQuery()` |
+| `config.setSearchMode` | `{mode}` | режим пошуку в конфізі; значення — ті самі, що приймає `query` |
+| `query` | `{text, searchMode?, excludeLocal?, language?}` | `processQuery()` |
+| `catalog.apps` | `{search?, limit?, offset?}` | read-only список із готової таблиці `apps` + кількість довідок |
+| `catalog.guides` | `{search?, appId?, limit?, offset?}` | read-only список завантажених довідок із `document_links` + `web_documents` |
+| `catalog.guide` | `{id}` | повний текст однієї вже завантаженої довідки |
 | `pipeline.scanApps` | — | `runScanApps()` |
 | `pipeline.fetchDocs` | — | `runFetchDocs()` |
 | `pipeline.fetchLocalDocs` | — | `runFetchLocalDocs()` |
@@ -67,7 +71,7 @@ WebSocket не обмежений політикою CORS, тому сторін
 | `reports.list` | — | список файлів у `sidecar/test-reports/` |
 | `reports.read` | `{name}` | вміст одного звіту; `name` — лише ім'я файлу, без шляхів |
 | `job.cancel` | `{id}` | скасувати довгу операцію (див. «Скасування довгих операцій») |
-| `walkthrough.start` | `{appId, goal, docId?}` | модуль 2.5: створює сесію ведення по інтерфейсу |
+| `walkthrough.start` | `{appId, goal, docId?, language?}` | модуль 2.5: створює сесію ведення по інтерфейсу |
 | `walkthrough.step` | `{sessionId, screenshotPath, frontmost?, appRunning?, debug?}` | наступний крок за знімком екрана |
 | `walkthrough.stuck` | `{sessionId, screenshotPath, frontmost?, debug?}` | повторний аналіз того самого екрана іншим промптом |
 | `walkthrough.history` | `{sessionId}` | усі кроки сесії з сирими відповідями моделі |
@@ -75,18 +79,35 @@ WebSocket не обмежений політикою CORS, тому сторін
 
 Усі методи `pipeline.*` додатково мають у результаті поле `cancelled` (boolean).
 Усі методи, що **пишуть** у базу (`pipeline.*`, `db.clear`), беруть файл-замок;
-методи читання (`query`, `db.stats`, `reports.*`, `ping`, `bootstrap.*`, `config.*`,
-`tests.*`, `walkthrough.*`) не беруть його ніколи.
+методи читання (`query`, `catalog.*`, `db.stats`, `reports.*`, `ping`, `bootstrap.*`,
+`config.*`, `tests.*`, `walkthrough.*`) не беруть його ніколи.
+
+`catalog.*` ніколи не запускають сканування, завантаження чи векторизацію. Вони
+лише читають дані, які вже підготував чинний pipeline, тому порожня база повертає
+порожні `items`, а не починає приховане оновлення.
 
 ## Уточнення до окремих методів
 
 ### `query`
-`searchMode` — один із `vector` / `fts` / `hybrid`; будь-яке інше значення
+`searchMode` — один із `vector` / `fts` / `hybrid` / `auto`; будь-яке інше значення
 відхиляється помилкою методу (мовчазний фолбек ховав би друкарську помилку).
+
+`auto` — не четвертий алгоритм, а явне ім'я для поведінки, яка й так була, тільки
+мовчки: якщо векторного індексу ПОТОЧНОЇ моделі немає, `db.searchSimilar`
+повертає порожньо, і гібридний пошук вироджується в самий FTS. Тепер вибір
+робиться до пошуку (`db.hasVectorTable()`), а `retrievalStats` повертає обидва
+значення: `searchMode` — фактичний режим (`hybrid` або `fts`), а
+`searchModeRequested` — те, що просили (`auto`). Для решти режимів обидва поля
+збігаються, тож старі читачі звіту нічого не помічають.
 Поле не передане або `null` — береться `config.rag.searchMode`.
 `excludeLocal` не передане або `null` — береться `config.rag.excludeLocalDocs`.
 Обидва параметри реально впливають на гілку пошуку; фактичні значення
 повертаються в `result.retrievalStats.searchMode` і `.excludeLocal`.
+
+`language` — необов'язкове `"uk"` або `"en"`. Воно задає лише мову
+користувацького пояснення від LLM і локалізованих fallback-відповідей. Пошук,
+ранжування, контекст і вибір програми від нього не залежать. Без поля зберігається
+попередня поведінка визначення мови моделлю з тексту запиту.
 
 Осі бенчмарку (`rag.systemPromptMode`, `rag.seed`, `rag.temperature`) на `query`
 теж діють, але лише через значення за замовчуванням із конфіга: окремих
@@ -95,10 +116,11 @@ WebSocket не обмежений політикою CORS, тому сторін
 запит до Ollama, що й до їх появи.
 
 `processQuery()` має п'ятий, необов'язковий аргумент `overrides` (`{seed,
-temperature}`), яким бенчмарк задає зерно на ОДИН виклик — це потрібно осі
+temperature, language}`), яким бенчмарк задає зерно на ОДИН виклик — це потрібно осі
 `seed: "random"`, де кожен кейс має власне зерно, а глобальний `config` спільний
 для трьох паралельних задач. **На RPC-методі `query` це ніяк не позначилось**:
-параметра для нього немає, і незадані значення беруться з конфіга, як і раніше.
+параметр `language` є лише у звичайному користувацькому RPC; незадані осі
+бенчмарку беруться з конфіга, як і раніше.
 Фактичні значення повертаються в `result.retrievalStats.seed` і `.temperature`
 (нові поля; `searchMode` та `excludeLocal` лишились на місці).
 

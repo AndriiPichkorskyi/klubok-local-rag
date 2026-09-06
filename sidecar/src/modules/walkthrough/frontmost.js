@@ -20,6 +20,7 @@
  */
 
 import path from "path";
+import { localized } from "../../i18n/language.js";
 
 /** Нормалізація назви: форма Unicode, регістр, пробіли, суфікс «.app». */
 export function normalizeAppName(value) {
@@ -141,7 +142,10 @@ export function decideFromFrontmost({ session, match, appRunning = null, isSelf 
     notes.push("ОС повідомила, що програму не запущено (appRunning=false)");
     return {
       state: "app_not_started",
-      instruction: `Відкрийте програму «${session.appName}» — вона ще не запущена.`,
+      instruction: localized(session.language, {
+        uk: `Відкрийте програму «${session.appName}» — вона ще не запущена.`,
+        en: `Open “${session.appName}” — the app is not running yet.`,
+      }),
       target: null,
       notes,
     };
@@ -151,9 +155,14 @@ export function decideFromFrontmost({ session, match, appRunning = null, isSelf 
   if (isSelf) notes.push("попереду наше ж вікно підказки (isSelf)");
   return {
     state: "wrong_window",
-    instruction: isSelf
-      ? `Перейдіть у вікно програми «${session.appName}» — зараз попереду вікно підказки.`
-      : `Перейдіть у вікно програми «${session.appName}» — зараз попереду «${front}».`,
+    instruction: localized(session.language, {
+      uk: isSelf
+        ? `Перейдіть у вікно програми «${session.appName}» — зараз попереду вікно підказки.`
+        : `Перейдіть у вікно програми «${session.appName}» — зараз попереду «${front}».`,
+      en: isSelf
+        ? `Switch to “${session.appName}” — the guide window is currently in front.`
+        : `Switch to “${session.appName}” — “${front}” is currently in front.`,
+    }),
     target: null,
     notes,
   };

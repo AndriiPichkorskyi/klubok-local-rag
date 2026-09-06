@@ -9,6 +9,7 @@
  * Послідовність виконує useFullRun.js звичайними викликами pipeline.* і tests.*.
  */
 import { useMemo, useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import Section from "./Section";
 import { ProgressBar, StopButton, CancelNote, TestPauseControls } from "./OpButton";
@@ -19,26 +20,17 @@ import { formatExecutionTime } from "./format";
 import Checkbox from "./Checkbox";
 import BenchmarkAxesForm from "./BenchmarkAxesForm";
 import { formatLiveMetrics } from "./systemMetrics";
+import { dt } from "./i18n";
 
 /** Підпис і колір кожного стану кроку. Зупинка і помилка — навмисно різні. */
 const STATUS_VIEW = {
-  pending: { text: "очікує", className: "muted" },
-  running: { text: "виконується", className: "dp-warn" },
-  done: { text: "готово", className: "dp-ok" },
-  error: { text: "помилка", className: "dp-err" },
-  cancelled: { text: "зупинено", className: "dp-warn" },
-  skipped: { text: "не виконувався", className: "muted" },
+  pending: { textKey: "fullRun.statuses.pending", className: "muted" },
+  running: { textKey: "fullRun.statuses.running", className: "dp-warn" },
+  done: { textKey: "fullRun.statuses.done", className: "dp-ok" },
+  error: { textKey: "fullRun.statuses.error", className: "dp-err" },
+  cancelled: { textKey: "fullRun.statuses.cancelled", className: "dp-warn" },
+  skipped: { textKey: "fullRun.statuses.skipped", className: "muted" },
 };
-
-/** Українська множина: 1 крок, 2 кроки, 5 кроків. */
-function stepsWord(count) {
-  const tail = count % 100;
-  if (tail >= 11 && tail <= 14) return "кроків";
-  const last = count % 10;
-  if (last === 1) return "крок";
-  if (last >= 2 && last <= 4) return "кроки";
-  return "кроків";
-}
 
 export default function FullRunSection({
   ops,
@@ -55,6 +47,7 @@ export default function FullRunSection({
   chatModels,
   configChatModel,
 }) {
+  const { i18n } = useTranslation();
   const [selection, setSelection] = useState(defaultSelection);
   const [models, setModels] = useState([]);
   const [metrics, setMetrics] = useState(null);
@@ -104,6 +97,7 @@ export default function FullRunSection({
       selectedConcurrency,
       selectedChat,
       configChatModel,
+      i18n.resolvedLanguage,
     ],
   );
 
@@ -138,15 +132,15 @@ export default function FullRunSection({
 
   return (
     <Section
-      title="Повний прогін (пайплайн + тести)"
-      hint={metrics && running ? `Виконання... ${formatLiveMetrics(metrics)}` : "кроки йдуть послідовно, кожен наступний — лише після успіху попереднього"}
+      title={dt("fullRun.title")}
+      hint={metrics && running ? dt("fullRun.runningMetrics", { metrics: formatLiveMetrics(metrics) }) : dt("fullRun.hint")}
     >
       {/* Чотири набори прапорців — це вибір ЩО запускати, тому вони стоять
           поруч колонками, а не тягнуться в один рядок із переносами: у вузькій
           панелі перенесені прапорці зливались в одну кашу без видимих меж. */}
       <div className="dp-picker">
         <fieldset className="dp-picker-group">
-          <legend className="dp-picker-title">Кроки пайплайна</legend>
+          <legend className="dp-picker-title">{dt("fullRun.pipelineSteps")}</legend>
           <div className="dp-picker-list">
             {PIPELINE_STEPS.map((step) => (
               <Checkbox
@@ -155,14 +149,14 @@ export default function FullRunSection({
                 onChange={() => toggleStep(step.id)}
                 disabled={running}
               >
-                {step.label}
+                {dt(step.labelKey)}
               </Checkbox>
             ))}
           </div>
         </fieldset>
 
         <fieldset className="dp-picker-group">
-          <legend className="dp-picker-title">Embed-моделі</legend>
+          <legend className="dp-picker-title">{dt("fullRun.embedModels")}</legend>
           <div className="dp-picker-list">
             {embedModels.map((model) => (
               <Checkbox
@@ -170,7 +164,7 @@ export default function FullRunSection({
                 checked={models.includes(model)}
                 onChange={() => toggleModel(model)}
                 disabled={running}
-                hint={model === configModel ? "з конфіга" : null}
+                hint={model === configModel ? dt("common.fromConfig") : null}
               >
                 {model}
               </Checkbox>
@@ -178,13 +172,13 @@ export default function FullRunSection({
           </div>
           <div className="dp-picker-foot muted dp-small">
             {models.length === 0
-              ? "нічого не обрано — модель із конфіга"
-              : "для векторизації та тестів"}
+              ? dt("fullRun.nothingConfig")
+              : dt("fullRun.vectorAndTests")}
           </div>
         </fieldset>
 
         <fieldset className="dp-picker-group">
-          <legend className="dp-picker-title">Chat-моделі</legend>
+          <legend className="dp-picker-title">{dt("fullRun.chatModels")}</legend>
           <div className="dp-picker-list">
             {chatModels?.map((model) => (
               <Checkbox
@@ -192,19 +186,19 @@ export default function FullRunSection({
                 checked={selectedChat.includes(model)}
                 onChange={() => toggleChatModel(model)}
                 disabled={running}
-                hint={model === configChatModel ? "з конфіга" : null}
+                hint={model === configChatModel ? dt("common.fromConfig") : null}
               >
                 {model}
               </Checkbox>
             ))}
           </div>
           <div className="dp-picker-foot muted dp-small">
-            {selectedChat.length === 0 ? "нічого не обрано — модель із конфіга" : "лише для тестів"}
+            {selectedChat.length === 0 ? dt("fullRun.nothingConfig") : dt("fullRun.testsOnly")}
           </div>
         </fieldset>
 
         <fieldset className="dp-picker-group">
-          <legend className="dp-picker-title">Тести після пайплайна</legend>
+          <legend className="dp-picker-title">{dt("fullRun.testsAfter")}</legend>
           <div className="dp-picker-list">
             {TEST_STEPS.map((step) => (
               <Checkbox
@@ -213,21 +207,21 @@ export default function FullRunSection({
                 onChange={() => toggleTest(step.id)}
                 disabled={running}
               >
-                {step.label}
+                {dt(step.labelKey)}
               </Checkbox>
             ))}
           </div>
           <div className="dp-picker-foot muted dp-small">
             {modelPairs > 1
-              ? `кожен тест піде ${modelPairs} разів — по разу на пару моделей`
-              : "з моделями з конфіга"}
+              ? dt("fullRun.eachTest", { count: modelPairs })
+              : dt("fullRun.configModels")}
           </div>
         </fieldset>
       </div>
 
       <div className="dp-test-controls">
         <label className="row dp-test-concurrency">
-          <span>Кількість потоків для тестів</span>
+          <span>{dt("fullRun.concurrency")}</span>
           <input
             type="number"
             min="1"
@@ -239,7 +233,7 @@ export default function FullRunSection({
             }
           />
         </label>
-        <span className="muted dp-small">Під час тесту значення змінюється після паузи.</span>
+        <span className="muted dp-small">{dt("fullRun.concurrencyNote")}</span>
       </div>
 
       {/* Осі бенчмарку. Секція прогону — саме те місце, де їх задають перед ніччю. */}
@@ -250,10 +244,8 @@ export default function FullRunSection({
       {startBlocked ? (
         <div className="dp-alert">
           {axesInvalid
-            ? "Осі задані з помилкою — виправте поле, підсвічене червоним."
-            : `Прогін не почнеться: запобіжник maxModes не пропускає ${blockedTests
-                .map((step) => step.label)
-                .join(" і ")}. Звузьте осі або підніміть rag.benchmark.maxModes у конфізі.`}
+            ? dt("fullRun.invalidAxes")
+            : dt("fullRun.blocked", { tests: blockedTests.map((step) => dt(step.labelKey)).join(dt("fullRun.and")) })}
         </div>
       ) : null}
 
@@ -265,9 +257,9 @@ export default function FullRunSection({
         >
           {running
             ? activeTestOp?.paused
-              ? `Тест на паузі · ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
-              : `Прогін триває… ${formatExecutionTime(totalMs)} · крок ${doneCount + 1} з ${entries.length}`
-            : `Запустити прогін (${plan.length} ${stepsWord(plan.length)} поспіль)`}
+              ? dt("fullRun.testPaused", { time: formatExecutionTime(totalMs), current: doneCount + 1, total: entries.length })
+              : dt("fullRun.runActive", { time: formatExecutionTime(totalMs), current: doneCount + 1, total: entries.length })
+            : dt("fullRun.start", { count: plan.length })}
         </button>
         {activeTestEntry && activeTestOp ? (
           <TestPauseControls
@@ -279,23 +271,21 @@ export default function FullRunSection({
         ) : null}
         {running ? (
           <button type="button" className="dp-danger" onClick={fullRun.stop} disabled={stopping}>
-            {stopping ? "Завершую послідовність…" : "Завершити весь прогін"}
+            {dt(stopping ? "fullRun.stopping" : "fullRun.stopAll")}
           </button>
         ) : null}
-        {plan.length === 0 ? <span className="muted dp-small">не обрано жодного кроку</span> : null}
+        {plan.length === 0 ? <span className="muted dp-small">{dt("fullRun.noSteps")}</span> : null}
       </div>
 
       {running && !activeTestEntry && plan.some((entry) => entry.method.startsWith("tests.")) ? (
         <div className="muted dp-small">
-          Пауза стане доступною тут, коли повний прогін дійде до тестового кроку.
-          Кроки індексації підтримують лише завершення.
+          {dt("fullRun.pauseLater")}
         </div>
       ) : null}
 
       {stopping ? (
         <div className="dp-op-msg dp-warn">
-          Наступні кроки не почнуться. Поточний крок бекенд перериває лише якщо job.cancel
-          підтвердив скасування — інакше він дійде до кінця, і це видно в його рядку.
+          {dt("fullRun.stopNotice")}
         </div>
       ) : null}
 
@@ -309,7 +299,7 @@ export default function FullRunSection({
               <div className="row dp-step-head">
                 <span className="dp-step-num">{index + 1}</span>
                 <span className="dp-step-label">{entry.label}</span>
-                <span className={`dp-small ${view.className}`}>{view.text}</span>
+                <span className={`dp-small ${view.className}`}>{dt(view.textKey)}</span>
                 {entry.durationMs !== null && entry.durationMs !== undefined ? (
                   <span className="muted dp-small">{formatExecutionTime(entry.durationMs)}</span>
                 ) : null}
@@ -323,12 +313,12 @@ export default function FullRunSection({
                   <ProgressBar pct={op.pct} />
                   <div className="dp-op-msg">
                     {typeof op.pct === "number" ? `${op.pct}% · ` : ""}
-                    {op.msg || "виконується…"}
+                    {op.msg || dt("operation.running")}
                   </div>
                   <StopButton
                     op={op}
                     onCancel={() => fullRun.stop()}
-                    label={isTest ? "Завершити" : "Стоп"}
+                    label={isTest ? dt("tests.finish") : dt("operation.stop")}
                   />
                   <CancelNote op={op} />
                 </>
@@ -347,7 +337,7 @@ export default function FullRunSection({
               {entry.status === "cancelled" ? (
                 <>
                   <div className="dp-alert dp-alert-info">
-                    Зупинено користувачем{entry.error ? ` · ${entry.error}` : ""}
+                    {dt("fullRun.cancelledByUser")}{entry.error ? ` · ${entry.error}` : ""}
                   </div>
                   {/* Скасований крок повертає те, що встигло зробитися — показуємо. */}
                   {entry.result !== undefined
@@ -371,10 +361,8 @@ export default function FullRunSection({
             <table className="dp-table">
               <thead>
                 <tr>
-                  <th>Крок</th>
-                  <th>Стан</th>
-                  <th>Час</th>
-                  <th>Що зроблено</th>
+                  <th>{dt("fullRun.headers.step")}</th><th>{dt("fullRun.headers.status")}</th>
+                  <th>{dt("fullRun.headers.time")}</th><th>{dt("fullRun.headers.result")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -384,7 +372,7 @@ export default function FullRunSection({
                   return (
                     <tr key={entry.key}>
                       <td>{entry.label}</td>
-                      <td className={view.className}>{view.text}</td>
+                      <td className={view.className}>{dt(view.textKey)}</td>
                       <td className="dp-num">
                         {entry.durationMs === null || entry.durationMs === undefined
                           ? "—"
@@ -396,12 +384,12 @@ export default function FullRunSection({
                           : entry.status === "error"
                             ? entry.error
                             : entry.status === "cancelled"
-                              ? `зупинено користувачем${
+                              ? `${dt("fullRun.cancelledByUser")}${
                                   entry.result === undefined
                                     ? ""
-                                    : ` · встигло: ${describeStepResult(entry.method, entry.result).join(" · ")}`
+                                    : ` · ${dt("fullRun.managedPartial", { result: describeStepResult(entry.method, entry.result).join(" · ") })}`
                                 }`
-                              : "не виконувався"}
+                              : dt("fullRun.statuses.skipped")}
                       </td>
                     </tr>
                   );
@@ -411,8 +399,7 @@ export default function FullRunSection({
           </div>
 
           <div className="muted dp-small">
-            Статус готовності моделей — у секції «Статистика бази»: вона оновлюється
-            автоматично після кожного прогону.
+            {dt("fullRun.managedStats")}
           </div>
         </div>
       ) : null}

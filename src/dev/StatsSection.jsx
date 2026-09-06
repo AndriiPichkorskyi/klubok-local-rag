@@ -15,27 +15,23 @@ import Section from "./Section";
 import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { readModelStats, readiness } from "./modelStats";
+import { dt } from "./i18n";
 
 /** Людські назви для відомих полів; невідомі показуємо як є. */
 const LABELS = {
-  appsCount: "Проіндексовано програм",
-  chunksCount: "Векторних чанків (поточна модель)",
-  currentModel: "Модель ембедингу з конфіга",
-  chunksFtsTotal: "Чанків у FTS",
-  chunksBySourceType: "Чанки за типом джерела",
-  documentLinksBySourceType: "Посилання за типом джерела",
-  webDocumentsCount: "Очищених веб-документів",
-  appsWithoutKeywords: "Програм без намірів",
-  sqlite: "SQLite",
-  collectedAt: "Зібрано",
+  appsCount: "stats.fields.appsCount", chunksCount: "stats.fields.chunksCount",
+  currentModel: "stats.fields.currentModel", chunksFtsTotal: "stats.fields.chunksFtsTotal",
+  chunksBySourceType: "stats.fields.chunksBySourceType", documentLinksBySourceType: "stats.fields.documentLinksBySourceType",
+  webDocumentsCount: "stats.fields.webDocumentsCount", appsWithoutKeywords: "stats.fields.appsWithoutKeywords",
+  sqlite: "stats.fields.sqlite", collectedAt: "stats.fields.collectedAt",
 };
 
 /** Підпис готовності. «Невідомо» — це теж чесна відповідь, на відміну від нуля. */
 const READY_VIEW = {
-  ready: { text: "готова", className: "dp-ok" },
-  partial: { text: "частково заповнена", className: "dp-warn" },
-  missing: { text: "немає даних", className: "dp-err" },
-  unknown: { text: "невідомо", className: "muted" },
+  ready: { textKey: "stats.states.ready", className: "dp-ok" },
+  partial: { textKey: "stats.states.partial", className: "dp-warn" },
+  missing: { textKey: "stats.states.missing", className: "dp-err" },
+  unknown: { textKey: "stats.states.unknown", className: "muted" },
 };
 
 /** Число або прочерк: нуль замість «немає даних» вводив би в оману. */
@@ -44,7 +40,7 @@ const numberOrDash = (value) => (typeof value === "number" ? value : "—");
 export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
   const op = opState(ops, "db.stats");
   const stats = op.result;
-  const load = () => run("db.stats", "Статистика", (ref) => rpc("db.stats", {}, ref));
+  const load = () => run("db.stats", dt("stats.operation"), (ref) => rpc("db.stats", {}, ref));
 
   // Після повного прогону статистику оновлюємо самі: саме заради неї прогін і робиться.
   useEffect(() => {
@@ -56,10 +52,10 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
   const { models, containerKey, hasModelData } = readModelStats(stats);
 
   return (
-    <Section title="Статистика бази" hint="готовність моделей видно завжди">
+    <Section title={dt("stats.title")} hint={dt("stats.hint")}>
       <OpButton
         op={op}
-        label="Оновити статистику (db.stats)"
+        label={dt("stats.refresh")}
         onClick={load}
         onCancel={() => cancelOp?.("db.stats")}
       />
@@ -69,11 +65,9 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
           <table className="dp-table">
             <thead>
               <tr>
-                <th>Модель ембедингу</th>
-                <th>Програм у базі</th>
-                <th>Векторних чанків</th>
-                <th>Розмір на диску</th>
-                <th>Стан</th>
+                <th>{dt("stats.headers.model")}</th><th>{dt("stats.headers.apps")}</th>
+                <th>{dt("stats.headers.chunks")}</th><th>{dt("stats.headers.size")}</th>
+                <th>{dt("stats.headers.status")}</th>
               </tr>
             </thead>
             <tbody>
@@ -83,10 +77,10 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
                   <tr key={model.name}>
                     <td>
                       {model.name}
-                      {model.isCurrent ? <span className="dp-badge">поточна</span> : null}
+                      {model.isCurrent ? <span className="dp-badge">{dt("stats.current")}</span> : null}
                     </td>
                     <td className="dp-num">
-                      {numberOrDash(model.vectorized)} з {numberOrDash(model.total)}
+                      {dt("stats.ratio", { value: numberOrDash(model.vectorized), total: numberOrDash(model.total) })}
                     </td>
                     <td
                       className="dp-num"
@@ -105,12 +99,12 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
                       title={model.tablePath || undefined}
                     >
                       {model.tableExists === true
-                        ? `${model.tableSize || "0.00"} МБ`
+                        ? `${model.tableSize || "0.00"} MB`
                         : model.tableExists === false
-                          ? "немає"
-                          : "невідомо"}
+                          ? dt("common.none")
+                          : dt("common.unknown")}
                     </td>
-                    <td className={view.className}>{view.text}</td>
+                    <td className={view.className}>{dt(view.textKey)}</td>
                   </tr>
                 );
               })}
@@ -119,8 +113,7 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
         </div>
       ) : stats && typeof stats === "object" ? (
         <div className="muted dp-small">
-          db.stats поки не повертає статус моделей — бекенд ще не розширив метод.
-          Порожні лічильники тут не вигадуємо.
+          {dt("stats.oldBackend")}
         </div>
       ) : null}
 
@@ -130,13 +123,13 @@ export default function StatsSection({ ops, run, cancelOp, refreshKey }) {
             .filter(([key]) => key !== containerKey)
             .map(([key, value]) => (
               <div key={key} style={{ display: "contents" }}>
-                <dt>{LABELS[key] || key}</dt>
+                <dt>{LABELS[key] ? dt(LABELS[key]) : key}</dt>
                 <dd>{typeof value === "object" ? JSON.stringify(value) : String(value)}</dd>
               </div>
             ))}
         </dl>
       ) : (
-        <div className="muted dp-small">Дані ще не запитували.</div>
+        <div className="muted dp-small">{dt("stats.noData")}</div>
       )}
     </Section>
   );

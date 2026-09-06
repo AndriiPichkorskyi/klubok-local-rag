@@ -21,6 +21,9 @@ export const configGet = () => rpc("config.get");
 export const query = (text, options = {}, clientRef = null) =>
   rpc("query", { text, ...options }, clientRef);
 export const dbStats = () => rpc("db.stats");
+export const catalogApps = (params = {}) => rpc("catalog.apps", params);
+export const catalogGuides = (params = {}) => rpc("catalog.guides", params);
+export const catalogGuide = (id) => rpc("catalog.guide", { id });
 export const jobCancel = (id) => rpc("job.cancel", { id });
 export const testsPause = (id) => rpc("tests.pause", { id });
 export const testsResume = (id, concurrency) =>
@@ -38,6 +41,28 @@ export const sidecarRestart = () => invoke("sidecar_restart");
  */
 export const onProgress = (handler) =>
   listen("sidecar://progress", (event) => handler(event.payload));
+
+/**
+ * Локальна шина «конфіг змінили».
+ *
+ * Панель розробника і вікно пошуку живуть в ОДНОМУ вікні, але нічого одне про
+ * одного не знають. Коли в панелі перемикають модель чи режим пошуку, ворота
+ * готовності мусять перевірити стан заново — інакше налаштування застосовується
+ * лише після перезапуску вікна, а це не те, чого людина очікує від перемикача.
+ *
+ * Вікно walkthrough — окреме вікно ОС, і подія до нього не доходить; йому це й
+ * не потрібно: воно читає конфіг через бекенд на кожну сесію.
+ */
+const CONFIG_CHANGED = "klubok:config-changed";
+
+export const notifyConfigChanged = () => {
+  window.dispatchEvent(new CustomEvent(CONFIG_CHANGED));
+};
+
+export const onConfigChanged = (handler) => {
+  window.addEventListener(CONFIG_CHANGED, handler);
+  return () => window.removeEventListener(CONFIG_CHANGED, handler);
+};
 
 /** Підписка на зміну стану з'єднання з sidecar. */
 export const onStatus = (handler) =>

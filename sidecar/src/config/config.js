@@ -107,6 +107,19 @@ export function reloadConfig() {
 }
 
 /**
+ * Записує режим пошуку у файл конфігурації та перечитує конфіг.
+ * Окрема вузька функція, а не загальний сеттер: дозволяти інтерфейсу писати
+ * будь-яке поле конфіга — надто широкі двері.
+ */
+export function updateSearchMode(mode) {
+  const current = readConfigFile();
+  if (current.rag?.searchMode === mode) return config;
+  current.rag = { ...current.rag, searchMode: mode };
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(current, null, 2));
+  return reloadConfig();
+}
+
+/**
  * Оновлює моделі у файлі конфігурації та перезавантажує конфіг.
  */
 export function updateModels({ embedModel, chatModel, visionModel }) {

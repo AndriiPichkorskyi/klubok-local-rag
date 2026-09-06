@@ -7,13 +7,14 @@
  */
 import { lazy, Suspense, useMemo, useState } from "react";
 import { formatDateTime } from "./format";
+import { dt } from "./i18n";
 
 const ReportCharts = lazy(() => import("./ReportCharts"));
 
 const RESULT_FILTERS = [
-  { id: "all", label: "Усі" },
-  { id: "passed", label: "Тільки успішні" },
-  { id: "failed", label: "Тільки провалені" },
+  { id: "all", labelKey: "reportTable.filters.all" },
+  { id: "passed", labelKey: "reportTable.filters.passed" },
+  { id: "failed", labelKey: "reportTable.filters.failed" },
 ];
 
 /** Колір рядка успішності — як у CLI. */
@@ -35,7 +36,7 @@ function languageScore(bucket) {
 
 function gapText(gap) {
   if (!Number.isFinite(gap)) return "—";
-  return `${gap > 0 ? "+" : ""}${gap} п.п.`;
+  return `${gap > 0 ? "+" : ""}${gap} ${dt("reportTable.points")}`;
 }
 
 function gapClass(gap) {
@@ -44,7 +45,7 @@ function gapClass(gap) {
 }
 
 function expectedText(value) {
-  if (Array.isArray(value)) return value.join(" або ");
+  if (Array.isArray(value)) return value.join(dt("reportTable.or"));
   return value === undefined || value === null ? "—" : String(value);
 }
 
@@ -87,7 +88,7 @@ function allModeFailures(rows, modeNames) {
 function contextLabel(result) {
   if (Array.isArray(result?.contextDocuments) && result.contextDocuments.length > 0) {
     return result.contextDocuments
-      .map((doc) => `${doc.sourceId || "?"}. ${doc.appName || "?"} — ${doc.title || "Довідка"}`)
+      .map((doc) => `${doc.sourceId || "?"}. ${doc.appName || "?"} — ${doc.title || dt("reportTable.help")}`)
       .join("; ");
   }
   if (Array.isArray(result?.contextApps) && result.contextApps.length > 0) {
@@ -108,16 +109,16 @@ function resourceMetricsText(result) {
     const maximum = Number.isFinite(result.sysGpuPercentMax)
       ? `, max ${result.sysGpuPercentMax.toFixed(0)}%`
       : "";
-    parts.push(`GPU системи avg ${result.sysGpuPercent.toFixed(1)}%${maximum}`);
+    parts.push(`${dt("reportTable.systemGpuAvg")} ${result.sysGpuPercent.toFixed(1)}%${maximum}`);
   }
   if (Number.isFinite(result?.sysGpuMemoryMB)) {
-    parts.push(`GPU-пам’ять ${Math.round(result.sysGpuMemoryMB)} MB`);
+    parts.push(`${dt("metrics.gpuMemory")} ${Math.round(result.sysGpuMemoryMB)} MB`);
   }
   if (Number.isFinite(result?.sysPowerScore)) {
     parts.push(`Energy Impact ${result.sysPowerScore.toFixed(1)}`);
   }
   if (Number.isFinite(result?.sysMetricsSamples)) {
-    parts.push(`зрізів ${result.sysMetricsSamples}`);
+    parts.push(`${dt("reportTable.slices")} ${result.sysMetricsSamples}`);
   }
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
@@ -128,26 +129,26 @@ function ResultDetails({ result }) {
 
   return (
     <details className="dp-result-details">
-      <summary>Показати</summary>
+      <summary>{dt("reportTable.show")}</summary>
       <dl className="dp-result-meta">
-        <dt>Причина</dt>
+        <dt>{dt("reportTable.reason")}</dt>
         <dd>{result?.reason || "—"}</dd>
-        <dt>Відповідь LLM</dt>
+        <dt>{dt("reportTable.llmAnswer")}</dt>
         <dd>{result?.llmResponse || "—"}</dd>
-        <dt>Сира відповідь</dt>
+        <dt>{dt("reportTable.rawAnswer")}</dt>
         <dd><pre>{result?.rawLlmOutput || "—"}</pre></dd>
-        <dt>Пошук</dt>
+        <dt>{dt("reportTable.search")}</dt>
         <dd>
           {result?.retrievalStats
-            ? `${result.retrievalStats.searchMode || "?"}; чанків: ${result.retrievalStats.filteredChunks ?? "?"}`
+            ? `${result.retrievalStats.searchMode || "?"}; ${dt("reportTable.chunks")}: ${result.retrievalStats.filteredChunks ?? "?"}`
             : "—"}
         </dd>
-        <dt>Ресурси</dt>
+        <dt>{dt("reportTable.resources")}</dt>
         <dd>{resourceMetricsText(result)}</dd>
       </dl>
 
       <div className="dp-result-docs">
-        <strong>Документи в контексті LLM</strong>
+        <strong>{dt("reportTable.contextDocs")}</strong>
         {documents.length > 0 ? (
           <ol>
             {documents.map((doc, index) => {
@@ -155,14 +156,14 @@ function ResultDetails({ result }) {
               return (
                 <li key={`${sourceId}:${doc.appName}:${doc.title}`}>
                   <div>
-                    <strong>{doc.appName || "Невідома програма"}</strong>
-                    {` — ${doc.title || "Довідка"}`}
-                    {chosenSourceId === sourceId ? <span className="dp-badge">вказано LLM</span> : null}
+                    <strong>{doc.appName || dt("reportTable.unknownApp")}</strong>
+                    {` — ${doc.title || dt("reportTable.help")}`}
+                    {chosenSourceId === sourceId ? <span className="dp-badge">{dt("reportTable.citedByLlm")}</span> : null}
                   </div>
                   <div className="muted dp-small">
                     sourceId={sourceId}
                     {doc.sourceType ? ` · ${doc.sourceType}` : ""}
-                    {Number.isFinite(doc.contentLength) ? ` · ${doc.contentLength} символів` : ""}
+                    {Number.isFinite(doc.contentLength) ? ` · ${doc.contentLength} ${dt("reportTable.chars")}` : ""}
                   </div>
                   {doc.matchedChunk ? <blockquote>{doc.matchedChunk}</blockquote> : null}
                 </li>
@@ -172,8 +173,8 @@ function ResultDetails({ result }) {
         ) : (
           <div className="muted dp-small">
             {Array.isArray(result?.contextApps) && result.contextApps.length > 0
-              ? `Старий звіт зберіг лише програми: ${result.contextApps.join(", ")}.`
-              : "Цей звіт створено до збереження контексту; перелік документів у ньому відсутній."}
+              ? dt("reportTable.oldAppsOnly", { apps: result.contextApps.join(", ") })
+              : dt("reportTable.noContext")}
           </div>
         )}
       </div>
@@ -196,7 +197,7 @@ export default function ReportTable({ data }) {
   });
 
   if (!data || typeof data !== "object" || !data.modes) {
-    return <div className="dp-alert">Це не схоже на звіт: у JSON немає поля «modes».</div>;
+    return <div className="dp-alert">{dt("reportTable.invalid")}</div>;
   }
 
   const totalCases = data.totalCases || 0;
@@ -261,14 +262,14 @@ export default function ReportTable({ data }) {
   return (
     <div>
       <div className="dp-small" style={{ marginBottom: 6 }}>
-        <strong>Підсумкове порівняння режимів (search modes)</strong>
+        <strong>{dt("reportTable.summary")}</strong>
         <div className="muted">
-          Дата звіту: {formatDateTime(data.timestamp)} · кейсів: {totalCases}
-          {modelsText ? ` · моделі: ${modelsText}` : ""}
+          {dt("reportTable.reportDate", { date: formatDateTime(data.timestamp), cases: totalCases })}
+          {modelsText ? ` · ${dt("reportTable.models", { models: modelsText })}` : ""}
         </div>
       </div>
 
-      <Suspense fallback={<div className="muted dp-small">Готую графіки…</div>}>
+      <Suspense fallback={<div className="muted dp-small">{dt("reportTable.charts")}</div>}>
         <ReportCharts data={data} />
       </Suspense>
 
@@ -276,16 +277,14 @@ export default function ReportTable({ data }) {
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Режим</th>
-              <th>Успішність</th>
-              <th>Час (заг/сер)</th>
-              <th>In/Out токени</th>
-              <th>Швидкість</th>
+              <th>{dt("reportTable.headers.mode")}</th><th>{dt("reportTable.headers.success")}</th>
+              <th>{dt("reportTable.headers.time")}</th><th>{dt("reportTable.headers.tokens")}</th>
+              <th>{dt("reportTable.headers.speed")}</th>
               <th>Node RAM</th>
               <th>Ollama RAM</th>
-              <th title="Середнє / максимум системного GPU протягом запитів">GPU сер./макс.</th>
-              <th title="Уніфікована пам’ять, яку використовує GPU всієї системи">GPU-пам’ять</th>
-              <th>Зрізів</th>
+              <th title={dt("reportTable.gpuHint")}>{dt("reportTable.headers.gpu")}</th>
+              <th title={dt("reportTable.gpuMemoryHint")}>{dt("reportTable.headers.gpuMemory")}</th>
+              <th>{dt("reportTable.headers.slices")}</th>
             </tr>
           </thead>
           <tbody>
@@ -296,7 +295,7 @@ export default function ReportTable({ data }) {
                   {row.passRate}% ({row.passed}/{totalCases})
                 </td>
                 <td className="dp-num">
-                  {row.totalTimeSec}c / {row.avgTime}c
+                  {row.totalTimeSec}{dt("common.seconds")} / {row.avgTime}{dt("common.seconds")}
                 </td>
                 <td className="dp-num">{row.tokens}</td>
                 <td className="dp-num">{row.tps}</td>
@@ -314,19 +313,17 @@ export default function ReportTable({ data }) {
       {languageRows.length > 0 ? (
         <div style={{ marginTop: 14 }}>
           <div className="dp-small" style={{ marginBottom: 6 }}>
-            <strong>Порівняння однакових задач за мовою</strong>
+            <strong>{dt("reportTable.languageComparison")}</strong>
             <div className="muted">
-              Різниця = українська − англійська; нейтральні запити не враховуються.
+              {dt("reportTable.languageHint")}
             </div>
           </div>
           <div className="dp-scroll-x">
             <table className="dp-table">
               <thead>
                 <tr>
-                  <th>Режим</th>
-                  <th>Українська</th>
-                  <th>Англійська</th>
-                  <th>Різниця</th>
+                  <th>{dt("reportTable.headers.mode")}</th><th>{dt("reportTable.headers.ukrainian")}</th>
+                  <th>{dt("reportTable.headers.english")}</th><th>{dt("reportTable.headers.difference")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -340,7 +337,7 @@ export default function ReportTable({ data }) {
                 ))}
                 {languageTotals?.uk?.cases && languageTotals?.en?.cases ? (
                   <tr>
-                    <td><strong>Усі режими</strong></td>
+                    <td><strong>{dt("reportTable.allModes")}</strong></td>
                     <td className={passRateClass(languageTotals.uk.passRate)}>
                       {languageScore(languageTotals.uk)}
                     </td>
@@ -359,9 +356,9 @@ export default function ReportTable({ data }) {
       {detailRows.length > 0 ? (
         <div className="dp-report-results">
           <div className="dp-report-block-title">
-            <strong>Кейси, що провалили всі режими ({hardFailures.length})</strong>
+            <strong>{dt("reportTable.hardFailures", { count: hardFailures.length })}</strong>
             <div className="muted dp-small">
-              Сюди потрапляє кейс, який має результат для кожного режиму звіту і ніде не пройшов.
+              {dt("reportTable.hardFailuresHint")}
             </div>
           </div>
           {hardFailures.length > 0 ? (
@@ -369,9 +366,8 @@ export default function ReportTable({ data }) {
               <table className="dp-table dp-result-table">
                 <thead>
                   <tr>
-                    <th>Запит</th>
-                    <th>Очікувалось</th>
-                    <th>Результати режимів</th>
+                    <th>{dt("reportTable.headers.query")}</th><th>{dt("reportTable.headers.expected")}</th>
+                    <th>{dt("reportTable.headers.modeResults")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -393,13 +389,13 @@ export default function ReportTable({ data }) {
               </table>
             </div>
           ) : (
-            <div className="dp-ok dp-small">Немає кейсів, які провалили всі режими.</div>
+            <div className="dp-ok dp-small">{dt("reportTable.noHardFailures")}</div>
           )}
 
           <div className="dp-report-block-title">
-            <strong>Усі результати построково ({filteredDetailRows.length}/{detailRows.length})</strong>
+            <strong>{dt("reportTable.allResults", { shown: filteredDetailRows.length, total: detailRows.length })}</strong>
           </div>
-          <div className="dp-result-filters" role="group" aria-label="Фільтр результатів">
+          <div className="dp-result-filters" role="group" aria-label={dt("reportTable.filterLabel")}>
             {RESULT_FILTERS.map((filter) => {
               const count = detailRows.filter(({ result }) =>
                 filter.id === "all"
@@ -416,7 +412,7 @@ export default function ReportTable({ data }) {
                   aria-pressed={resultFilter === filter.id}
                   onClick={() => setResultFilter(filter.id)}
                 >
-                  {filter.label} ({count})
+                  {dt(filter.labelKey)} ({count})
                 </button>
               );
             })}
@@ -427,13 +423,10 @@ export default function ReportTable({ data }) {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>Статус</th>
-                  <th>Режим</th>
-                  <th>Запит</th>
-                  <th>Очікувалось</th>
-                  <th>Рекомендовано</th>
-                  <th>Контекст</th>
-                  <th>Деталі</th>
+                  <th>{dt("reportTable.headers.status")}</th><th>{dt("reportTable.headers.mode")}</th>
+                  <th>{dt("reportTable.headers.query")}</th><th>{dt("reportTable.headers.expected")}</th>
+                  <th>{dt("reportTable.headers.recommended")}</th><th>{dt("reportTable.headers.context")}</th>
+                  <th>{dt("reportTable.headers.details")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -459,17 +452,17 @@ export default function ReportTable({ data }) {
         </div>
       ) : (
         <div className="muted dp-small" style={{ marginTop: 14 }}>
-          Цей звіт не містить построкових результатів.
+          {dt("reportTable.noRows")}
         </div>
       )}
 
       <div className="dp-small" style={{ marginTop: 6 }}>
-        <div>Загальний час усіх тестів: {(grandTotalTime / 1000).toFixed(1)} сек</div>
+        <div>{dt("reportTable.totalTime", { seconds: (grandTotalTime / 1000).toFixed(1) })}</div>
         <div>
-          Загалом токенів:{" "}
+          {dt("reportTable.totalTokens")}{" "}
           {tokensKnown
             ? `${grandTotalInputTokens} (input) / ${grandTotalOutputTokens} (output)`
-            : "— (звіт цієї версії їх не рахував)"}
+            : dt("reportTable.oldNoTokens")}
         </div>
       </div>
     </div>

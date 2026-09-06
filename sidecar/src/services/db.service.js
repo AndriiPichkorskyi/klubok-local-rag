@@ -655,6 +655,18 @@ class DbService {
   }
 
   // Пошук найбільш схожих чанків за вектором запиту
+  /**
+   * Чи існує векторний індекс ПОТОЧНОЇ моделі.
+   *
+   * Потрібно режиму `auto`: без цієї перевірки `searchSimilar` тихо повертає
+   * порожньо, і система виглядає робочою, хоча пошуку за змістом уже немає.
+   * Порожня тека LanceDB не рахується — вона створюється сама при підключенні.
+   */
+  async hasVectorTable() {
+    await this.ensureLanceDbConnected();
+    return Boolean(this.table);
+  }
+
   async searchSimilar(queryVector, limit = config.rag.topK, excludeLocal = false) {
     await this.ensureLanceDbConnected();
     if (!this.table) return [];
@@ -759,6 +771,148 @@ class DbService {
       linkId,
       html,
     ]);
+  }
+
+  /**
+   * Каталог уже просканованих програм лише для читання в користувацькому інтерфейсі.
+   * Тут немає повторного сканування чи підготовки даних: читаємо тільки таблиці,
+   * які наповнює чинний пайплайн індексації.
+   */
+  async listApps({ search = "", limit = 100, offset = 0 } = {}) {
+    const safeLimit = Math.max(1, Math.min(200, Number.isInteger(limit) ? limit : 100));
+    const safeOffset = Math.max(0, Number.isInteger(offset) ? offset : 0);
+    const needle = String(search || "").trim();
+    const where = needle ? "WHERE a.name LIKE ? COLLATE NOCASE" : "";
+    const args = needle ? [`%${needle}%`] : [];
+
+    const totalRow = await this.sqliteDb.get(
+      `SELECT COUNT(*) AS count FROM apps a ${where}`,
+      args,
+    );
+    const items = await this.sqliteDb.all(
+      `SELECT
+         a.id,
+         a.name,
+         a.path,
+         a.version,
+         a.keywords,
+         a.lastIndexed,
+         (
+           SELECT GROUP_CONCAT(title, char(31))
+           FROM (
+             SELECT dl2.title AS title
+             FROM document_links dl2
+             JOIN web_documents wd2 ON wd2.link_id = dl2.id
+             WHERE dl2.app_id = a.id
+             ORDER BY dl2.title COLLATE NOCASE
+             LIMIT 6
+           )
+         ) AS guideTitles,
+         COUNT(dl.id) AS guidesCount,
+         COUNT(wd.id) AS availableGuidesCount
+       FROM apps a
+       LEFT JOIN document_links dl ON dl.app_id = a.id
+       LEFT JOIN web_documents wd ON wd.link_id = dl.id
+       ${where}
+       GROUP BY a.id
+       ORDER BY a.name COLLATE NOCASE
+       LIMIT ? OFFSET ?`,
+      [...args, safeLimit, safeOffset],
+    );
+
+    return {
+      items: items.map((item) => ({
+        ...item,
+        guideTitles: String(item.guideTitles || "").split("\u001f").filter(Boolean),
+        guidesCount: Number(item.guidesCount || 0),
+        availableGuidesCount: Number(item.availableGuidesCount || 0),
+      })),
+      total: Number(totalRow?.count || 0),
+      limit: safeLimit,
+      offset: safeOffset,
+    };
+  }
+
+  /** Список уже завантажених довідок із коротким фрагментом для каталогу. */
+  async listGuides({ search = "", appId = null, limit = 100, offset = 0 } = {}) {
+    const safeLimit = Math.max(1, Math.min(200, Number.isInteger(limit) ? limit : 100));
+    const safeOffset = Math.max(0, Number.isInteger(offset) ? offset : 0);
+    const needle = String(search || "").trim();
+    const clauses = ["wd.id IS NOT NULL"];
+    const args = [];
+
+    if (needle) {
+      clauses.push("(dl.title LIKE ? COLLATE NOCASE OR a.name LIKE ? COLLATE NOCASE)");
+      args.push(`%${needle}%`, `%${needle}%`);
+    }
+    if (appId) {
+      clauses.push("a.id = ?");
+      args.push(String(appId));
+    }
+
+    const where = `WHERE ${clauses.join(" AND ")}`;
+    const totalRow = await this.sqliteDb.get(
+      `SELECT COUNT(*) AS count
+       FROM document_links dl
+       JOIN apps a ON a.id = dl.app_id
+       JOIN web_documents wd ON wd.link_id = dl.id
+       ${where}`,
+      args,
+    );
+    const items = await this.sqliteDb.all(
+      `SELECT
+         dl.id,
+         wd.id AS documentId,
+         dl.app_id AS appId,
+         a.name AS appName,
+         dl.title,
+         dl.sourceType,
+         SUBSTR(REPLACE(REPLACE(wd.content, char(10), ' '), char(13), ' '), 1, 240) AS excerpt,
+         LENGTH(wd.content) AS contentLength
+       FROM document_links dl
+       JOIN apps a ON a.id = dl.app_id
+       JOIN web_documents wd ON wd.link_id = dl.id
+       ${where}
+       ORDER BY a.name COLLATE NOCASE, dl.title COLLATE NOCASE
+       LIMIT ? OFFSET ?`,
+      [...args, safeLimit, safeOffset],
+    );
+
+    return {
+      items: items.map((item) => ({
+        ...item,
+        documentId: Number(item.documentId),
+        contentLength: Number(item.contentLength || 0),
+      })),
+      total: Number(totalRow?.count || 0),
+      limit: safeLimit,
+      offset: safeOffset,
+    };
+  }
+
+  /** Повний текст однієї вже завантаженої довідки. */
+  async getGuide(id) {
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("Параметр `id` довідки мусить бути додатним цілим числом.");
+    }
+    const guide = await this.sqliteDb.get(
+      `SELECT
+         dl.id,
+         wd.id AS documentId,
+         dl.app_id AS appId,
+         a.name AS appName,
+         dl.title,
+         dl.sourceType,
+         dl.uri,
+         wd.content
+       FROM document_links dl
+       JOIN apps a ON a.id = dl.app_id
+       JOIN web_documents wd ON wd.link_id = dl.id
+       WHERE dl.id = ?`,
+      [id],
+    );
+    if (!guide) throw new Error(`Довідку з id=${id} не знайдено.`);
+    return { ...guide, documentId: Number(guide.documentId) };
   }
 
   async getRawHtml(linkId) {

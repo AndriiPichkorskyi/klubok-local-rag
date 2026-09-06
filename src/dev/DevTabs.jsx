@@ -10,6 +10,7 @@
  * інакше після переходу на іншу вкладку людина забуває, де залишила прогін.
  */
 import { useCallback, useRef } from "react";
+import { dt } from "./i18n";
 
 export default function DevTabs({ tabs, active, onSelect, runningCounts }) {
   const listRef = useRef(null);
@@ -61,8 +62,8 @@ export default function DevTabs({ tabs, active, onSelect, runningCounts }) {
     <div
       className="dp-tabs"
       role="tablist"
-      aria-label="Розділи панелі розробника"
-      title="Стрілки ← → перемикають розділи"
+      aria-label={dt("tabsLabel")}
+      title={dt("tabsHelp")}
       ref={listRef}
       onKeyDown={onKeyDown}
     >
@@ -78,9 +79,9 @@ export default function DevTabs({ tabs, active, onSelect, runningCounts }) {
             className={running > 0 ? "dp-tab dp-tab-busy" : "dp-tab"}
             aria-selected={selected}
             aria-controls={`dp-pane-${tab.id}`}
-            aria-label={running > 0 ? `${tab.label} — виконується операцій: ${running}` : undefined}
+            aria-label={running > 0 ? dt("tabBusy", { label: tab.label, count: running }) : undefined}
             tabIndex={selected ? 0 : -1}
-            title={running > 0 ? `${tab.hint} · виконується операцій: ${running}` : tab.hint}
+            title={running > 0 ? `${tab.hint} · ${dt("running", { count: running })}` : tab.hint}
             onClick={() => onSelect(tab.id)}
           >
             <span>{tab.label}</span>

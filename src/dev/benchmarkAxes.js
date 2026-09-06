@@ -35,35 +35,33 @@ export const RANDOM_SEED = "random";
 export const AXIS_FIELDS = [
   {
     id: "search",
-    label: "Пошук",
+    labelKey: "benchmark.fields.search",
     type: "choice",
     options: [
-      { value: "vector", label: "vector" },
-      { value: "fts", label: "fts" },
-      { value: "hybrid", label: "hybrid" },
+      { value: "vector", label: "vector" }, { value: "fts", label: "fts" }, { value: "hybrid", label: "hybrid" },
     ],
   },
   {
     id: "xml",
-    label: "XML-теги",
+    labelKey: "benchmark.fields.xml",
     type: "choice",
     options: [
-      { value: false, label: "без XML" },
-      { value: true, label: "з XML" },
+      { value: false, labelKey: "benchmark.options.noXml" },
+      { value: true, labelKey: "benchmark.options.xml" },
     ],
   },
   {
     id: "reorder",
-    label: "Переставляння контексту",
+    labelKey: "benchmark.fields.reorder",
     type: "choice",
     options: [
-      { value: false, label: "як є" },
-      { value: true, label: "переставляти" },
+      { value: false, labelKey: "benchmark.options.original" },
+      { value: true, labelKey: "benchmark.options.reorder" },
     ],
   },
   {
     id: "systemPrompt",
-    label: "Системний промпт",
+    labelKey: "benchmark.fields.prompt",
     type: "choice",
     options: [
       { value: "system", label: "system" },
@@ -73,17 +71,17 @@ export const AXIS_FIELDS = [
   },
   {
     id: "temperature",
-    label: "Температура",
+    labelKey: "benchmark.fields.temperature",
     type: "list",
     placeholder: "0.1",
-    hint: "числа 0…2 через кому",
+    hintKey: "benchmark.temperatureHint",
   },
   {
     id: "seed",
-    label: "Seed",
+    labelKey: "benchmark.fields.seed",
     type: "list",
     placeholder: "42",
-    hint: `числа через кому · «${RANDOM_SEED}» — нове зерно на КОЖЕН запит · «none» — без seed`,
+    hintKey: "benchmark.seedHint",
   },
 ];
 
@@ -116,7 +114,7 @@ export function parseAxisInput(axisId, text) {
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
 
-  if (parts.length === 0) return { values: null, error: "порожньо — потрібне хоча б одне значення" };
+  if (parts.length === 0) return { values: null, error: dt("benchmark.empty") };
 
   const values = [];
   for (const part of parts) {
@@ -132,23 +130,23 @@ export function parseAxisInput(axisId, text) {
       }
       const num = Number(part);
       if (!Number.isFinite(num)) {
-        return { values: null, error: `«${part}» — не число, не «${RANDOM_SEED}» і не «none»` };
+        return { values: null, error: dt("benchmark.notSeedNumber", { value: part }) };
       }
       values.push(num);
       continue;
     }
 
     const num = Number(part);
-    if (!Number.isFinite(num)) return { values: null, error: `«${part}» — не число` };
+    if (!Number.isFinite(num)) return { values: null, error: dt("benchmark.notNumber", { value: part }) };
     if (axisId === "temperature" && (num < 0 || num > 2)) {
-      return { values: null, error: `${num} поза межами 0…2` };
+      return { values: null, error: dt("benchmark.outOfRange", { value: num }) };
     }
     values.push(num);
   }
 
   // Дублі — це два однакові режими з однією назвою: звіт мовчки втратив би один.
   const seen = new Set(values.map((value) => formatAxisValue(axisId, value)));
-  if (seen.size !== values.length) return { values: null, error: "є повтори" };
+  if (seen.size !== values.length) return { values: null, error: dt("benchmark.duplicates") };
 
   return { values, error: null };
 }
@@ -168,11 +166,13 @@ export function effectiveAxes(configAxes, overrides) {
 export function formatDurationLong(ms) {
   if (!Number.isFinite(ms) || ms < 0) return "—";
   const totalMinutes = Math.round(ms / 60000);
-  if (totalMinutes < 1) return `${Math.max(1, Math.round(ms / 1000))} с`;
+  if (totalMinutes < 1) return `${Math.max(1, Math.round(ms / 1000))} ${dt("common.seconds")}`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours === 0) return `${minutes} хв`;
-  return minutes === 0 ? `${hours} год` : `${hours} год ${minutes} хв`;
+  if (hours === 0) return `${minutes} ${dt("common.minutes")}`;
+  return minutes === 0
+    ? `${hours} ${dt("common.hours")}`
+    : `${hours} ${dt("common.hours")} ${minutes} ${dt("common.minutes")}`;
 }
 
 /** Українська множина для слова «режим»/«прогін». */
@@ -184,3 +184,4 @@ export function pluralize(count, one, few, many) {
   if (last >= 2 && last <= 4) return few;
   return many;
 }
+import { dt } from "./i18n";

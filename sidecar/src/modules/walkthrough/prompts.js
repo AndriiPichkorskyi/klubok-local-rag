@@ -1,4 +1,5 @@
 import { config } from "../../config/config.js";
+import { localized, outputLanguageInstruction } from "../../i18n/language.js";
 /**
  * Файл: src/modules/walkthrough/prompts.js
  * Опис: Промпти і схеми відповідей модуля 2.5. Тримаємо їх окремо від логіки
@@ -156,7 +157,7 @@ export const PLAN_SCHEMA = {
  *   `confirmedApp` — назва програми, про яку ОС уже сказала, що вона попереду.
  *   Тоді питання «чи та це програма» з задачі зору прибирається зовсім.
  */
-export function visionSystem({ states = STATES, confirmedApp = null } = {}) {
+export function visionSystem({ states = STATES, confirmedApp = null, language = "uk" } = {}) {
   // Порядок пояснень фіксований і не залежить від порядку в переліку: промпт
   // без звуження має лишатися рівно таким, яким був до появи `frontmost`.
   const lines = STATE_ORDER.filter((state) => states.includes(state));
@@ -168,6 +169,12 @@ export function visionSystem({ states = STATES, confirmedApp = null } = {}) {
     ? `\nПрограму «${confirmedApp}» вже відкрито, і саме її вікно зараз активне: це встановила операційна система, а не здогад. Не перевіряй, чи та це програма, і не сумнівайся в цьому — питання закрите. Твоя задача звужена до двох речей: ЗНАЙТИ в кадрі потрібний елемент і сказати, ЩО РОБИТИ ДАЛІ.\n`
     : "";
 
+  const instructionRule = localized(language, {
+    uk: "Інструкція — одне коротке речення українською, у наказовій формі, про ОДНУ дію. Ніяких «потім», «після цього», ніяких списків.",
+    en: "The instruction must be one short imperative sentence in English about ONE action. Do not use lists or combine it with later actions.",
+  });
+  const languageRule = outputLanguageInstruction(language);
+
   return `Ти — асистент, який дивиться на знімок екрана macOS і веде користувача до його мети крок за кроком.
 
 Ти бачиш РІВНО ОДИН знімок і фрагменти офіційної довідки програми. Довідка описує, як має бути; знімок показує, як є НАСПРАВДІ. Коли вони розходяться, правий знімок.
@@ -177,12 +184,14 @@ ${confirmedBlock}
 Поле state важливіше за інструкцію:
 ${stateLines}
 
+${languageRule}
+
 Правила координат:
 - рамку box давай ЛИШЕ для елемента, який ти бачиш у цьому кадрі;
 - координати — частки від 0 до 1 відносно НАДІСЛАНОГО зображення, а не пікселі: x і y — лівий верхній кут рамки, w і h — її ширина й висота;
 - не знайшов елемента — target_found: false, і рамку не вигадуй.
 
-Інструкція — одне коротке речення українською, у наказовій формі, про ОДНУ дію. Ніяких «потім», «після цього», ніяких списків.`;
+${instructionRule}`;
 }
 
 /**
@@ -247,6 +256,7 @@ ${session.confirmedSteps.map((text, i) => `${i + 1}. ${text}`).join("\n")}
     system: visionSystem({
       states: confirmedApp ? CONFIRMED_STATES : STATES,
       confirmedApp,
+      language: session.language,
     }),
     prompt: `Програма, з якою працює користувач: «${session.appName}».
 Мета користувача: «${session.goal}».
@@ -281,6 +291,7 @@ export function buildStuckPrompt(session, sent, { confirmedApp = null } = {}) {
     system: visionSystem({
       states: confirmedApp ? CONFIRMED_STATES : STATES,
       confirmedApp,
+      language: session.language,
     }),
     prompt: `Програма: «${session.appName}». Мета користувача: «${session.goal}».
 
@@ -315,6 +326,7 @@ export function buildVerifyPrompt(session, sent, planStep, { confirmedApp = null
     system: visionSystem({
       states: confirmedApp ? CONFIRMED_STATES : STATES,
       confirmedApp,
+      language: session.language,
     }),
     prompt: `Програма: «${session.appName}». Мета користувача: «${session.goal}».
 
@@ -334,9 +346,10 @@ ${task}
  * Промпт побудови плану (режим `plan`, звичайна чат-модель, без зображення).
  * Кроки готуються ОДИН раз на сесію з документації.
  */
-export function buildPlanPrompt(appName, goal, docsText, maxSteps) {
+export function buildPlanPrompt(appName, goal, docsText, maxSteps, language = "uk") {
+  const languageRule = outputLanguageInstruction(language);
   return {
-    system: `Ти складаєш коротку покрокову інструкцію для користувача macOS за офіційною довідкою програми. Пиши українською, по одній дії на крок, у наказовій формі. Спирайся ЛИШЕ на текст довідки: якщо в ній чогось немає — не вигадуй. Кроків має бути не більше ${maxSteps}.`,
+    system: `Ти складаєш коротку покрокову інструкцію для користувача macOS за офіційною довідкою програми. ${languageRule} Пиши по одній дії на крок, у наказовій формі. Спирайся ЛИШЕ на текст довідки: якщо в ній чогось немає — не вигадуй. Кроків має бути не більше ${maxSteps}.`,
     prompt: `Програма: «${appName}».
 Мета користувача: «${goal}».
 

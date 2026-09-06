@@ -58,6 +58,7 @@ import {
   trackFile,
 } from "./session.js";
 import { askVision, parseModelJson, toStepFields } from "./vision.js";
+import { localized, normalizeResponseLanguage } from "../../i18n/language.js";
 
 /** Дозволені джерела кроку. Невідоме значення — помилка, а не тихий фолбек. */
 export const STEP_SOURCES = ["vision", "plan"];
@@ -287,8 +288,8 @@ function journalStep(
  * Складає план кроків звичайною чат-моделлю (режим `plan`).
  * Робиться ОДИН раз на сесію, у walkthrough.start.
  */
-async function buildPlan({ appName, goal, docsText, maxSteps, signal, onProgress }) {
-  const { system, prompt } = buildPlanPrompt(appName, goal, docsText, maxSteps);
+async function buildPlan({ appName, goal, docsText, maxSteps, language, signal, onProgress }) {
+  const { system, prompt } = buildPlanPrompt(appName, goal, docsText, maxSteps, language);
   onProgress(`Готуємо план кроків моделлю ${config.ollama.chatModel}...`);
 
   const response = await ollama.generateStructuredResponse({
@@ -326,6 +327,7 @@ async function buildPlan({ appName, goal, docsText, maxSteps, signal, onProgress
 export async function start(params = {}, ctx = {}) {
   const onProgress = ctx.onProgress || (() => {});
   const cfg = settings();
+  const language = normalizeResponseLanguage(params.language, "uk");
 
   if (!cfg.enabled) {
     throw new Error("Модуль walkthrough вимкнено в конфізі (walkthrough.enabled = false).");
@@ -375,6 +377,7 @@ export async function start(params = {}, ctx = {}) {
       goal,
       docsText: docs.text,
       maxSteps: cfg.maxSteps,
+      language,
       signal: ctx.signal,
       onProgress,
     });
@@ -390,6 +393,7 @@ export async function start(params = {}, ctx = {}) {
     appName: app.name,
     appPath: app.path,
     goal,
+    language,
     docId: params.docId ?? null,
     docsText: docs.text,
     docs: docs.docs,
@@ -412,6 +416,7 @@ export async function start(params = {}, ctx = {}) {
   const journal = await logger.walkthroughJournalOpen(session.sessionId, {
     appId: app.id,
     appName: app.name,
+    language,
     goal,
     stepSource: cfg.stepSource,
     docsSource: docs.source,
@@ -457,6 +462,7 @@ export async function start(params = {}, ctx = {}) {
   return {
     sessionId: session.sessionId,
     appName: app.name,
+    language,
     // Контракт: у режимі vision плану немає — масив порожній, і totalSteps
     // у кроках буде null.
     planned: plan.map((step) => step.instruction),
@@ -490,8 +496,10 @@ async function prepareTurn(params, ctx, kind) {
       session,
       blocked: {
         state: "unclear",
-        instruction:
-          "Немає знімка екрана. Якщо система не дала дозволу, відкрийте «Системні параметри» → «Конфіденційність і безпека» → «Запис екрана» і дозвольте його цій програмі.",
+        instruction: localized(session.language, {
+          uk: "Немає знімка екрана. Якщо система не дала дозволу, відкрийте «Системні параметри» → «Конфіденційність і безпека» → «Запис екрана» і дозвольте його цій програмі.",
+          en: "No screenshot is available. If macOS denied access, open System Settings → Privacy & Security → Screen Recording and allow this app.",
+        }),
         target: null,
         notes: [`знімка «${screenshotPath || "(порожній шлях)"}» не існує або він порожній`],
       },
@@ -716,6 +724,7 @@ async function switchStepSource(session, next, ctx) {
       goal: session.goal,
       docsText: session.docsText,
       maxSteps: settings().maxSteps,
+      language: session.language,
       signal: ctx.signal,
       onProgress,
     });
@@ -789,8 +798,10 @@ async function manualStep(session, { startedAt, wantDebug, switchNotes = [] }) {
       }
     : {
         state: "done",
-        instruction:
-          "Це були всі кроки з довідки. Перевірте результат і завершіть підказку.",
+        instruction: localized(session.language, {
+          uk: "Це були всі кроки з довідки. Перевірте результат і завершіть підказку.",
+          en: "Those were all the steps in the guide. Check the result and finish the walkthrough.",
+        }),
         target: null,
         notes: [...switchNotes, "ручний режим: список кроків вичерпано"],
       };
@@ -905,7 +916,10 @@ export async function step(params = {}, ctx = {}) {
   if (known.stepIndex >= cfg.maxSteps) {
     const fields = {
       state: "unclear",
-      instruction: `Досягнуто ліміт кроків на сесію (${cfg.maxSteps}). Завершіть підказку і почніть заново з уточненою метою.`,
+      instruction: localized(known.language, {
+        uk: `Досягнуто ліміт кроків на сесію (${cfg.maxSteps}). Завершіть підказку і почніть заново з уточненою метою.`,
+        en: `This session has reached its ${cfg.maxSteps}-step limit. Finish the walkthrough and start again with a more specific goal.`,
+      }),
       target: null,
       notes: ["ліміт maxStepsPerSession"],
     };
@@ -938,7 +952,10 @@ export async function step(params = {}, ctx = {}) {
     known.docsMissingReported = true;
     const fields = {
       state: "unclear",
-      instruction: `${known.docsMessage} Далі підказка спиратиметься лише на те, що видно на екрані.`,
+      instruction: localized(known.language, {
+        uk: `${known.docsMessage} Далі підказка спиратиметься лише на те, що видно на екрані.`,
+        en: "No guide matching this task was found for the selected app. The walkthrough will continue using only what is visible on the screen.",
+      }),
       target: null,
       notes: ["документації під мету не знайдено", ...(known.docsNotes || [])],
     };
@@ -1116,6 +1133,7 @@ export async function step(params = {}, ctx = {}) {
         sent,
         failure: answer.failure,
         allowedStates,
+        language: session.language,
       });
 
       if (checked.state === "ready" || checked.state === "done") {
@@ -1156,7 +1174,7 @@ export async function step(params = {}, ctx = {}) {
       signal: ctx.signal,
       onProgress,
     });
-    fields = toStepFields(answer.parsed, { sent, failure: answer.failure, allowedStates });
+    fields = toStepFields(answer.parsed, { sent, failure: answer.failure, allowedStates, language: session.language });
     source = "vision";
     if (previousConfirmedBy) {
       fields.notes = [
@@ -1179,10 +1197,15 @@ export async function step(params = {}, ctx = {}) {
         ...fields,
         state: LOOP_STATE,
         target: null,
-        instruction:
-          "Ви вже позначили цей крок виконаним, а модель пропонує його знову — " +
-          "тому ми його не показуємо. Перейдіть у ручний режим: далі вестиме " +
-          "список кроків із довідки, без моделі.",
+        instruction: localized(session.language, {
+          uk:
+            "Ви вже позначили цей крок виконаним, а модель пропонує його знову — " +
+            "тому ми його не показуємо. Перейдіть у ручний режим: далі вестиме " +
+            "список кроків із довідки, без моделі.",
+          en:
+            "You already marked this step as complete, but the model suggested it again. " +
+            "Switch to manual mode to continue from the guide without the model.",
+        }),
         notes: [
           ...(fields.notes || []),
           `інструкцію приховано: це повтор підтвердженого кроку «${guard.confirmedMatch}»`,
@@ -1321,7 +1344,7 @@ export async function stuck(params = {}, ctx = {}) {
     onProgress: ctx.onProgress || (() => {}),
   });
 
-  const fields = toStepFields(answer.parsed, { sent, failure: answer.failure, allowedStates });
+  const fields = toStepFields(answer.parsed, { sent, failure: answer.failure, allowedStates, language: session.language });
   session.visionCalls += 1;
   const response = buildStepResponse(session, fields, {
     source: "vision",

@@ -10,23 +10,24 @@ import OpButton from "./OpButton";
 import { opState } from "./useDevRuntime";
 import { BenchmarkPlanSummary } from "./BenchmarkAxesForm";
 import { formatLiveMetrics } from "./systemMetrics";
+import { dt } from "./i18n";
 
 function verdict(result) {
   if (result && typeof result === "object") {
     const { ok, totalCases, passed, failed, passRate } = result;
     const parts = [];
     if (Number.isFinite(passed) && Number.isFinite(totalCases)) {
-      parts.push(`пройдено ${passed} з ${totalCases}`);
+      parts.push(dt("tests.passed", { passed, total: totalCases }));
     }
-    if (Number.isFinite(failed) && failed > 0) parts.push(`провалено ${failed}`);
+    if (Number.isFinite(failed) && failed > 0) parts.push(dt("tests.failed", { count: failed }));
     if (Number.isFinite(passRate)) parts.push(`${passRate}%`);
     return {
       text: parts.length ? parts.join(" · ") : JSON.stringify(result),
       className: ok ? "dp-ok" : "dp-warn",
     };
   }
-  if (result === true) return { text: "усі кейси пройдено", className: "dp-ok" };
-  if (result === false) return { text: "є провалені кейси — дивіться звіт", className: "dp-warn" };
+  if (result === true) return { text: dt("tests.allPassed"), className: "dp-ok" };
+  if (result === false) return { text: dt("tests.hasFailures"), className: "dp-warn" };
   return null;
 }
 
@@ -85,12 +86,12 @@ export default function TestsSection({
 
   return (
     <Section 
-      title="Тестування" 
+      title={dt("tests.title")}
       hint={formatLiveMetrics(metrics)}
     >
       <div className="dp-test-controls">
         <label className="row dp-test-concurrency">
-          <span>Кількість потоків</span>
+          <span>{dt("tests.concurrency")}</span>
           <input
             type="number"
             min="1"
@@ -101,20 +102,20 @@ export default function TestsSection({
           />
         </label>
         <span className="muted dp-small">
-          Під час прогону змінюється після паузи; нове значення застосує «Продовжити».
+          {dt("tests.concurrencyNote")}
         </span>
       </div>
 
       <div className="dp-grid">
         <OpButton
           op={rag}
-          label="RAG-бенчмарк (tests.run)"
-          onClick={() => start("tests.run", "RAG-бенчмарк")}
+          label={`${dt("tests.rag")} (tests.run)`}
+          onClick={() => start("tests.run", dt("tests.rag"))}
           onCancel={() => cancelOp?.("tests.run")}
           onPause={() => pauseOp?.("tests.run")}
           onResume={(concurrency) => resumeOp?.("tests.run", concurrency)}
           defaultConcurrency={selectedConcurrency}
-          stopLabel="Завершити"
+          stopLabel={dt("tests.finish")}
           disabled={Boolean(benchmark?.blockedFor?.("rag") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(rag)}
@@ -122,13 +123,13 @@ export default function TestsSection({
 
         <OpButton
           op={external}
-          label="EXTERNAL-тести (tests.runExternal)"
-          onClick={() => start("tests.runExternal", "EXTERNAL-тести")}
+          label={`${dt("tests.external")} (tests.runExternal)`}
+          onClick={() => start("tests.runExternal", dt("tests.external"))}
           onCancel={() => cancelOp?.("tests.runExternal")}
           onPause={() => pauseOp?.("tests.runExternal")}
           onResume={(concurrency) => resumeOp?.("tests.runExternal", concurrency)}
           defaultConcurrency={selectedConcurrency}
-          stopLabel="Завершити"
+          stopLabel={dt("tests.finish")}
           disabled={Boolean(benchmark?.blockedFor?.("external") || benchmark?.hasFieldErrors)}
         >
           {renderVerdict(external)}
@@ -138,14 +139,12 @@ export default function TestsSection({
       {benchmark ? (
         <BenchmarkPlanSummary
           benchmark={benchmark}
-          note="Осі цієї матриці задаються у вкладці «Прогін», секція «Повний прогін»; незадане береться з конфіга."
+          note={dt("tests.planNote")}
         />
       ) : null}
 
       <div className="muted dp-small">
-        Обидва методи пишуть JSON-звіт у sidecar/test-reports/ — після завершення список
-        звітів оновлюється автоматично. EXTERNAL-тести тепер теж ідуть ПО ВСІХ режимах
-        матриці, а не одним фіксованим.
+        {dt("tests.footer")}
       </div>
     </Section>
   );

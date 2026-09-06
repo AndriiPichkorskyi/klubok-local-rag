@@ -98,13 +98,13 @@ export function cleanAppName(value) {
  * програма». Вигадувати замість назви сміття не можна, а мовчати незручно:
  * «зараз попереду інша програма» і чесно, і зрозуміло.
  */
-export function frontmostLabel(front) {
+export function frontmostLabel(front, fallback = "інша програма") {
   const name = cleanAppName(front?.name);
   if (name) return name;
   const bundleId = String(front?.bundleId ?? "").trim();
   const tail = cleanAppName(bundleId.split(".").pop());
   if (tail && /[\p{L}]/u.test(tail)) return tail;
-  return "інша програма";
+  return fallback;
 }
 
 /**
