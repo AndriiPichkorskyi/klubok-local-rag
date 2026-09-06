@@ -1,0 +1,79 @@
+%% Процес Індексації (Збір інформації та побудова векторів)
+%% Ця діаграма відображає архітектуру завантаження даних (ETL-пайплайн) в нашій системі, згруповану за основними етапами.
+
+graph TD
+    subgraph Legend [Легенда: Кольорова палітра]
+        direction LR
+        L1[Нейромережа Ollama]
+        L2[Бази даних SQLite/LanceDB]
+        L3[Процеси обробки даних]
+        L4[Початок / Кінець]
+    end
+
+    Start([Запуск процесу індексації]) --> ScanApps
+
+    subgraph AppDiscovery [Етап 1: Виявлення програм]
+        ScanApps[Сканування директорії /Applications] --> ParsePlist[Парсинг Info.plist]
+        ParsePlist --> ExtractMeta[Витяг hpd_project_identifier<br>та helpBookFolder]
+        ExtractMeta --> SaveAppMeta[(SQLite: збереження<br>метаданих програми)]
+    end
+    
+    SaveAppMeta --> WebScrapingBranch
+    SaveAppMeta --> LocalScrapingBranch
+    
+    subgraph DocumentationScraping [Етап 2: Завантаження та обробка довідки]
+        WebScrapingBranch{Є hpd_project_identifier?}
+        WebScrapingBranch -- Так --> FetchToc[Завантаження Help TOC з Apple Support]
+        FetchToc --> ParseHtmlToc[Парсинг HTML посилань]
+        ParseHtmlToc --> FetchDocs[Завантаження статей довідки HTML]
+        FetchDocs --> TurndownWEB[Конвертація HTML у Markdown<br>Очищення від сміття]
+        TurndownWEB --> SaveToSqliteWEB[(SQLite: web_documents<br>sourceType='WEB')]
+        
+        LocalScrapingBranch{Є helpBookFolder<br>або папка docs/help?}
+        LocalScrapingBranch -- Так --> FindLocalHtml[Пошук .html файлів<br>усередині програми]
+        FindLocalHtml --> ReadLocalHtml[Читання локальних HTML]
+        ReadLocalHtml --> TurndownLOCAL[Конвертація HTML у Markdown<br>Очищення від сміття]
+        TurndownLOCAL --> SaveToSqliteLOCAL[(SQLite: web_documents<br>sourceType='LOCAL')]
+    end
+    
+    SaveToSqliteWEB --> KeywordCheck
+    SaveToSqliteLOCAL --> KeywordCheck
+    WebScrapingBranch -- Ні --> KeywordCheck
+    LocalScrapingBranch -- Ні --> KeywordCheck
+
+    subgraph KeywordAugmentation [Етап 3: Document Expansion - Keyword Augmentation]
+        KeywordCheck{Чи увімкнено<br>Keyword Augmentation?}
+        KeywordCheck -- Так --> GenKeywords["LLM генерує наміри<br>користувача<br><i>(Конфігурований паралелізм)</i>"]
+        GenKeywords --> SaveKeywords[(SQLite: збереження<br>в колонку keywords)]
+        SaveKeywords --> SyntheticChunk[Створення штучного чанку<br>з ключовими словами]
+    end
+    
+    KeywordCheck -- Ні --> Chunking
+    SyntheticChunk --> Chunking
+    
+    subgraph Vectorization [Етап 4: Векторизація та Індексація]
+        Chunking[Розбиття Markdown на чанки<br>chunkSize=500, overlap=50] --> GenEmbeddings[Ollama: Генерація Векторів<br>qwen3-embedding]
+        GenEmbeddings --> SaveFTS[(SQLite FTS5: <br>текстовий пошук)]
+        GenEmbeddings --> SaveLance[(LanceDB: <br>векторний пошук)]
+        SaveFTS --> MarkDone[Позначення програми<br>як vectorized=1]
+        SaveLance --> MarkDone
+    end
+    
+    MarkDone --> End([Готово])
+    
+    %% Стилізація та кольори
+    classDef db fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px,color:#000;
+    classDef llm fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#000;
+    classDef process fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#000;
+    classDef startEnd fill:#e8f5e9,stroke:#4caf50,stroke-width:2px,color:#000;
+    
+    class SaveAppMeta,SaveToSqliteWEB,SaveToSqliteLOCAL,SaveKeywords,SaveFTS,SaveLance,L2 db;
+    class GenKeywords,GenEmbeddings,L1 llm;
+    class ScanApps,ParsePlist,ExtractMeta,WebScrapingBranch,LocalScrapingBranch,FetchToc,ParseHtmlToc,FetchDocs,FindLocalHtml,ReadLocalHtml,TurndownWEB,TurndownLOCAL,Chunking,L3 process;
+    class Start,End,L4 startEnd;
+    
+    style AppDiscovery fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style DocumentationScraping fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style KeywordAugmentation fill:#fff8e1,stroke:#ffd54f,stroke-width:2px,stroke-dasharray: 5 5;
+    style Vectorization fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style Legend fill:#ffffff,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;

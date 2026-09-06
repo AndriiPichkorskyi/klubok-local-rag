@@ -1,0 +1,265 @@
+{
+  "_опис": "Єдиний конфіг усього проєкта. Читається sidecar/src/config/config.js та Rust-частиною. Змінюйте тут, а не в коді.",
+  "embedModelName": "nomic-embed-text:latest",
+  "embedModels": [
+    "qwen3-embedding:0.6b",
+    "qwen3-embedding:4b",
+    "nomic-embed-text:latest"
+  ],
+  "rpc": {
+    "host": "127.0.0.1",
+    "port": 17817,
+    "token": "dev-local-token-change-me",
+    "_коментар": "WebSocket-канал між Tauri та sidecar. Слухає лише localhost.",
+    "requestTimeoutSec": 86400,
+    "_requestTimeoutSec_коментар": "Ліміт очікування однієї відповіді. 24 години потрібні для нічних матричних тестів; розрив з'єднання завершує очікування одразу."
+  },
+  "logging": {
+    "enabled": false,
+    "_enabled_коментар": "Файлові журнали sidecar/logs (sidecar.N.log і queries.log). false = не створювати й не дописувати ці файли. Журнали walkthrough керуються окремим walkthrough.journal."
+  },
+  "ollama": {
+    "baseUrl": "http://localhost:11434",
+    "chatModel": "qwen3:1.7b",
+    "visionModel": "qwen2.5vl:3b",
+    "_visionModel_коментар": "Використовується модулем walkthrough для аналізу скріншотів"
+  },
+  "scraper": {
+    "timeoutMs": 30000,
+    "delayMs": 200
+  },
+  "indexer": {
+    "chunkSize": 500,
+    "chunkOverlap": 50,
+    "concurrency": 2,
+    "keywordConcurrency": 2,
+    "enableKeywordAugmentation": true,
+    "scanLocalDocs": true,
+    "maxLocalDocsPerApp": 100
+  },
+  "rag": {
+    "topK": 15,
+    "searchMode": "hybrid",
+    "_searchMode_варіанти": [
+      "vector",
+      "fts",
+      "hybrid",
+      "auto"
+    ],
+    "_searchMode_коментар": "auto = гібридний пошук, якщо для поточної моделі є векторний індекс, інакше лише FTS. Фактичний режим кожного запиту повертається в result.retrievalStats.searchMode.",
+    "enableXmlTags": true,
+    "enableContextReordering": true,
+    "enableJsonFormat": true,
+    "includeAppIntents": true,
+    "systemPromptMode": "system",
+    "_systemPromptMode_варіанти": [
+      "system",
+      "inline",
+      "none"
+    ],
+    "_systemPromptMode_коментар": "Куди йде системний текст класифікатора. system = поле system запиту до Ollama (як було завжди); inline = той самий текст на початку основного промпта, поле system не надсилається; none = тексту немає ніде. Розділяє два питання: чи важливий канал доставки і чи важливий сам текст.",
+    "seed": 42,
+    "_seed_коментар": "Зерно генерації. null = не надсилати seed узагалі, тоді кожен виклик дає інший зразок.",
+    "temperature": 0.1,
+    "testConcurrency": 2,
+    "excludeLocalDocs": false,
+    "benchmark": {
+      "_опис": "Матриця режимів RAG-бенчмарку. Режими = ПОВНИЙ ДОБУТОК осей нижче. Щоб зафіксувати вісь — лишіть у ній одне значення; щоб варіювати — додайте кілька. Прогонів LLM = (добуток довжин осей) × кількість тестових кейсів.",
+      "axes": {
+        "search": [
+          "hybrid"
+        ],
+        "xml": [
+          false,
+          true
+        ],
+        "reorder": [
+          false,
+          true
+        ],
+        "systemPrompt": [
+          "system",
+          "inline",
+          "none"
+        ],
+        "seed": [
+          1,
+          2,
+          3
+        ],
+        "temperature": [
+          0.1
+        ],
+        "chatModel": [
+          "qwen3:1.7b"
+        ],
+        "embedModel": [
+          "qwen3-embedding:4b"
+        ]
+      },
+      "_axes_варіанти": {
+        "search": [
+          "vector",
+          "fts",
+          "hybrid"
+        ],
+        "xml": [
+          false,
+          true
+        ],
+        "reorder": [
+          false,
+          true
+        ],
+        "systemPrompt": [
+          "system",
+          "inline",
+          "none"
+        ],
+        "seed": "список чисел; null = без seed; \"random\" = НОВЕ випадкове зерно на кожен запит. Кілька чисел = кілька прогонів ТОГО САМОГО режиму, звіт покаже мінімум/максимум/σ pass rate",
+        "temperature": "список чисел 0..2. Досі була константою 0.1 і віссю не була взагалі"
+      },
+      "_seed_random_коментар": "\"random\" — це ІНШИЙ експеримент, ніж перелік чисел: він міряє власну нестабільність системи, а не порівнює конкретні точки. Такий режим не потрапляє ні в seedGroups, ні в порівняння осей (axisComparison), а живе в окремому блоці звіту randomSeedRuns; фактичне зерно кожного кейса лежить у полі seed його результату — без нього прогін не відтворити.",
+      "_дефолт_коментар": "Осі вище відтворюють поведінку до появи матриці: 3 × 2 × 2 = 12 режимів, systemPrompt system, seed 42. Назви режимів теж старі (vector, vector+XML, ...), тож старі звіти лишаються порівнюваними. Щойно вісь systemPrompt або seed починає варіювати, до назви додається суфікс |sp=... / |seed=...",
+      "_приклад_чи_винен_системний_промпт": {
+        "search": [
+          "hybrid"
+        ],
+        "xml": [
+          false,
+          true
+        ],
+        "reorder": [
+          false
+        ],
+        "systemPrompt": [
+          "system",
+          "inline",
+          "none"
+        ],
+        "seed": [
+          42
+        ]
+      },
+      "_приклад_чи_винен_seed": {
+        "search": [
+          "hybrid"
+        ],
+        "xml": [
+          false,
+          true
+        ],
+        "reorder": [
+          false
+        ],
+        "systemPrompt": [
+          "system"
+        ],
+        "seed": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      "_приклад_чи_винна_температура": {
+        "search": [
+          "hybrid"
+        ],
+        "xml": [
+          true
+        ],
+        "reorder": [
+          true
+        ],
+        "systemPrompt": [
+          "system"
+        ],
+        "seed": [
+          42
+        ],
+        "temperature": [
+          0,
+          0.1,
+          0.5,
+          1
+        ]
+      },
+      "_приклад_наскільки_система_нестабільна": {
+        "search": [
+          "hybrid"
+        ],
+        "xml": [
+          true
+        ],
+        "reorder": [
+          true
+        ],
+        "systemPrompt": [
+          "system"
+        ],
+        "seed": [
+          "random"
+        ],
+        "temperature": [
+          0.1
+        ]
+      },
+      "maxModes": 48,
+      "_maxModes_коментар": "Запобіжник від випадкового запуску всієї матриці (3 × 2 × 2 × 3 × T темп × N seed). 0 = без обмеження; якщо режимів більше — прогін не стартує, а панель показує це ще до запуску. 36 = нічний прогін, який уже робився; більше — свідоме рішення, і тоді число тут піднімають руками. Осі з панелі розробника рахуються цим самим запобіжником.",
+      "_maxModes_увага": "Той самий ліміт діє і на EXTERNAL-тести, а там 68 кейсів: 33 однакові задачі парами uk/en та одна нейтральна пара. 36 режимів — це вже 2448 запитів до LLM. Очікуваний час панель показує до старту."
+    },
+    "maxContextDocuments": 3
+  },
+  "bootstrap": {
+    "requiredModels": [
+      "qwen3:1.7b",
+      "qwen3-embedding:0.6b"
+    ],
+    "optionalModels": [
+      "qwen3-embedding:4b",
+      "qwen2.5vl:3b"
+    ],
+    "autoPull": false,
+    "_autoPull_коментар": "true = завантажувати відсутні моделі автоматично при першому запуску"
+  },
+  "walkthrough": {
+    "enableScreenAnalysis": true,
+    "captureMode": "window",
+    "_captureMode_варіанти": [
+      "window",
+      "fullscreen"
+    ],
+    "screenshotDir": "data/screenshots",
+    "_screenshotDir_коментар": "Відносний шлях рахується від теки ДАНИХ (типово sidecar/, у зібраному застосунку — ~/Library/Application Support/<identifier>). Так само його резолвить Rust у src-tauri/src/system.rs.",
+    "maxStepsPerSession": 12,
+    "enabled": true,
+    "stepSource": "vision",
+    "_stepSource_варіанти": [
+      "vision",
+      "plan"
+    ],
+    "_stepSource_коментар": "vision — модель веде наживо по знімку. plan — РУЧНИЙ режим: список кроків один раз готує чат-модель із довідки, далі користувач іде сам, зір не викликається взагалі. Це стартове значення; посеред сесії режим перемикається кнопкою у вікні підказки (walkthrough.step, параметр stepSource).",
+    "planVerify": false,
+    "_planVerify_коментар": "Чи звіряти екран зором у режимі plan. Вимкнено: сенс ручного режиму саме в тому, що він не залежить від моделі й не змушує чекати. Увімкнення повертає старий шлях «план веде, зір звіряє кадр» — для порівняння режимів в експерименті.",
+    "enableHighlight": false,
+    "_enableHighlight_коментар": "Рамка поверх екрана. Вимкнено: спершу віконце збоку, підсвічування як другий етап.",
+    "maxImageWidth": 1024,
+    "_maxImageWidth_коментар": "Знімок зменшується до цієї ширини перед надсиланням у vision-модель.",
+    "visionNumCtx": 8192,
+    "_visionNumCtx_коментар": "Розмір контексту vision-моделі (num_ctx). Зображення з'їдає більшість вікна, тож при переповненні Ollama сама скаржиться і радить або підняти це число, або зменшити maxImageWidth / maxDocsCharsForVision.",
+    "maxDocsCharsForVision": 1200,
+    "_maxDocsCharsForVision_коментар": "Скільки символів довідки лишається у vision-промпті. Повна стаття туди не влазить: модель має бачити орієнтири, а не весь текст.",
+    "visionTimeoutSec": 120,
+    "activationDelayMs": 450,
+    "_activationDelayMs_коментар": "Пауза після активації цільової програми і до знімка: `open` повертається раніше, ніж вікно вийде наперед. Менше ~250 мс — кадр ловить наш застосунок.",
+    "debug": false,
+    "_debug_коментар": "Режим розробника: walkthrough.step і walkthrough.stuck додають блок debug (сира відповідь моделі, промпт, кадр, як визначено стан).",
+    "journal": true,
+    "_journal_коментар": "Журнал сесії на диск: один файл JSONL на сесію з промптами, сирими відповідями моделі, розібраними полями і тривалостями. Це інструмент розбору ПІСЛЯ факту; самі знімки в журнал не потрапляють — лише шляхи до них.",
+    "journalDir": "data/walkthrough-journal",
+    "journalKeep": 20,
+    "_journalKeep_коментар": "Скільки файлів журналу лишається в теці. Найстаріші прибираються при відкритті нової сесії: це налагодження, а не спосіб забити диск."
+  }
+}

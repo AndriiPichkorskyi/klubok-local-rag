@@ -1,0 +1,86 @@
+%% Аналіз Запиту (RAG Pipeline)
+%% Ця діаграма відображає процес обробки запиту користувача, пошуку інформації та генерації відповіді.
+
+graph TD
+    subgraph Legend [Легенда: Кольорова палітра]
+        direction LR
+        L1[Нейромережа Ollama]
+        L2[Бази Даних та Пошук]
+        L3[Процеси обробки даних]
+        L4[Помилки та Fallbacks]
+        L5[Початок / Кінець]
+    end
+
+    Start([Користувач вводить запит]) --> CheckMode
+    
+    subgraph QueryRouting [Етап 1: Маршрутизація та Пошук]
+        CheckMode{Який режим<br>пошуку?}
+        
+        FilterLocal{ExcludeLocalDocs?}
+        CheckMode --> FilterLocal
+        
+        FilterLocal -- "FTS" --> FtsSearch[SQLite FTS5 MATCH<br>+ Фільтр sourceType]
+        FilterLocal -- "Vector" --> GenQueryVector[Ollama: Генерація вектора запиту]
+        FilterLocal -- "Hybrid" --> HybridFork[Паралельний пошук]
+        
+        GenQueryVector --> VectorSearch[LanceDB Vector Search<br>+ Фільтр sourceType]
+        
+        HybridFork --> FtsSearch
+        HybridFork --> GenQueryVector
+        
+        FtsSearch -. Тільки Hybrid Mode .-> RRF[Reciprocal Rank Fusion<br>Об'єднання результатів]
+        VectorSearch -. Тільки Hybrid Mode .-> RRF
+    end
+    
+    VectorSearch -. Тільки Vector Mode .-> StrictTopK
+    RRF -. Тільки Hybrid Mode .-> HasResults
+    FtsSearch -. Тільки FTS Mode .-> HasResults
+    
+    subgraph RelevanceFiltering [Етап 2: Відбір релевантного контексту]
+        StrictTopK[Strict Top-K Filter<br>Відкидання чанків з _distance > 0.95]
+        StrictTopK --> HasResults{Чи є результати?}
+        HasResults -- Ні --> ReturnNotFound(Відповідь: Програм не знайдено)
+        HasResults -- Так --> ParentDocRetrieval[Завантаження повних Markdown<br>статей для знайдених чанків]
+        ParentDocRetrieval --> ReRanking[Context Re-ranking<br>Найкращі - по краях, найгірші - в центр]
+    end
+    
+    ReRanking --> PromptGen
+    
+    subgraph Generation [Етап 3: LLM Генерація - Prompt Engineering]
+        PromptGen[Формування Промпту<br>Constraint Placement + XML теги<br><b>+ Strict Grounding Rule</b>]
+        PromptGen --> LLM[Ollama: qwen3 chat]
+    end
+    
+    LLM --> ParseResult
+    
+    subgraph PostProcessing [Етап 4: Обробка результату]
+        ParseResult{Парсинг відповіді LLM}
+        ParseResult -- "INVALID_QUERY" --> Fallback1(Відповідь: Незрозумілий запит)
+        ParseResult -- "NOT_FOUND" --> Fallback2(Відповідь: Програми не знайдено)
+        ParseResult -- "[SOURCE_ID: X] або JSON" --> ExtractApp[Ідентифікація програми<br>зі списку parentDocuments]
+        ExtractApp --> FormatOutput["UI Рендер Markdown (marked)<br>+ Додавання повної статті"]
+    end
+    
+    FormatOutput --> End([Вивід результату користувачу])
+    Fallback1 --> End
+    Fallback2 --> End
+    ReturnNotFound --> End
+    
+    %% Стилізація та кольори
+    classDef search fill:#e3f2fd,stroke:#2196f3,stroke-width:2px,color:#000;
+    classDef llm fill:#fff3e0,stroke:#ff9800,stroke-width:2px,color:#000;
+    classDef process fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px,color:#000;
+    classDef fallback fill:#ffebee,stroke:#f44336,stroke-width:2px,color:#000;
+    classDef startEnd fill:#e8f5e9,stroke:#4caf50,stroke-width:2px,color:#000;
+    
+    class FtsSearch,VectorSearch,RRF,StrictTopK,L2 search;
+    class GenQueryVector,LLM,L1 llm;
+    class CheckMode,FilterLocal,ParentDocRetrieval,ReRanking,PromptGen,ParseResult,ExtractApp,FormatOutput,L3 process;
+    class Fallback1,Fallback2,ReturnNotFound,L4 fallback;
+    class Start,End,L5 startEnd;
+    
+    style QueryRouting fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style RelevanceFiltering fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style Generation fill:#fff8e1,stroke:#ffd54f,stroke-width:2px,stroke-dasharray: 5 5;
+    style PostProcessing fill:#f9f9f9,stroke:#ccc,stroke-width:2px,stroke-dasharray: 5 5;
+    style Legend fill:#ffffff,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;
