@@ -552,6 +552,20 @@ a {
   border-radius: 18px;
   font-size: 18px;
 }
+/* Справжня іконка програми замість монограми: рамка й підкладка зникають,
+   бо іконки macOS мають власну форму й тінь. */
+.app-monogram > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+.app-monogram:has(> img) {
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+  padding: 1px;
+}
 .catalog-detail-head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

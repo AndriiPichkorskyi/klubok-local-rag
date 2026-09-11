@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 
 import { config, reloadConfig, updateModels, updateSearchMode } from "../config/config.js";
 import { db, vectorizedColumnFor } from "../services/db.service.js";
+import { appIcons } from "../services/appIcon.service.js";
 import { check as bootstrapCheck, pullModel as bootstrapPullModel } from "../bootstrap/index.js";
 import { normalizeResponseLanguage } from "../i18n/language.js";
 import { processQuery, SEARCH_MODES } from "../modules/rag/engine.js";
@@ -350,6 +351,14 @@ export const methods = {
   /** Каталог завантажених довідок лише для читання з готових таблиць. */
   async "catalog.guides"(params = {}) {
     return await db.listGuides(params);
+  },
+
+  /**
+   * Іконки програм для каталогу: приймає шляхи до бандлів, повертає PNG у
+   * data-URL. Диск не змінюється, крім кешу іконок у теці даних.
+   */
+  async "catalog.appIcons"(params = {}) {
+    return await appIcons(params.paths);
   },
 
   /** Повний текст однієї готової довідки; індексацію не запускає. */

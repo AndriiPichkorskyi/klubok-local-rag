@@ -53,6 +53,7 @@ WebSocket не обмежений політикою CORS, тому сторін
 | `catalog.apps` | `{search?, limit?, offset?}` | read-only список із готової таблиці `apps` + кількість довідок |
 | `catalog.guides` | `{search?, appId?, limit?, offset?}` | read-only список завантажених довідок із `document_links` + `web_documents` |
 | `catalog.guide` | `{id}` | повний текст однієї вже завантаженої довідки |
+| `catalog.appIcons` | `{paths: string[]}` | іконки програм: `.icns` із бандла → PNG у data-URL (`{icons: {path: dataUrl\|null}, size}`). macOS-only, кеш у теці даних; програми з іконкою в `Assets.car` дають `null` |
 | `pipeline.scanApps` | — | `runScanApps()` |
 | `pipeline.fetchDocs` | — | `runFetchDocs()` |
 | `pipeline.fetchLocalDocs` | — | `runFetchLocalDocs()` |

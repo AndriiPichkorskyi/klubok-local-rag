@@ -4,7 +4,7 @@
   "embedModels": [
     "qwen3-embedding:0.6b",
     "qwen3-embedding:4b",
-    "qwen3-embedding:0.6b"
+    "nomic-embed-text:latest"
   ],
   "rpc": {
     "host": "127.0.0.1",
@@ -39,7 +39,7 @@
   },
   "rag": {
     "topK": 15,
-    "searchMode": "hybrid",
+    "searchMode": "auto",
     "_searchMode_варіанти": [
       "vector",
       "fts",

@@ -23,11 +23,24 @@ function shortHash(value) {
   return value ? value.slice(0, 10) : "—";
 }
 
+/** Ті самі токени дизайн-системи, що й у ReportCharts. */
+function cssVar(name, fallback) {
+  if (typeof window === "undefined" || !document.documentElement) return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 function colors() {
-  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return dark
-    ? { text: "#e8eaed", muted: "#9aa1ac", line: "#2a2e37", panel: "#1d2027" }
-    : { text: "#16181d", muted: "#6b7280", line: "#e5e7eb", panel: "#f7f8fa" };
+  return {
+    text: cssVar("--fg", "#1d1d1f"),
+    muted: cssVar("--muted", "#6e6e73"),
+    line: cssVar("--line", "#e5e5e5"),
+    panel: cssVar("--surface", "#ffffff"),
+    accent: cssVar("--accent", "#7d82b8"),
+    sage: "#81968f",
+    taupe: "#c7c4b9",
+    ramp: ["#b4867f", "#c7c4b9", "#81968f"],
+  };
 }
 
 export default function ReportComparison({ items }) {
@@ -63,9 +76,9 @@ export default function ReportComparison({ items }) {
     xAxis: { type: "category", data: items.map(modelLabel), axisLabel: { color: theme.muted, rotate: items.length > 3 ? 30 : 0 } },
     yAxis: { type: "value", min: 0, max: 100, name: dt("comparison.successPct"), axisLabel: { color: theme.muted } },
     series: [
-      { name: dt("comparison.total"), type: "bar", data: items.map((item) => item.passRate), itemStyle: { color: "#2563eb" } },
-      { name: dt("comparison.ukrainian"), type: "bar", data: items.map((item) => item.ukPassRate), itemStyle: { color: "#15803d" } },
-      { name: dt("comparison.english"), type: "bar", data: items.map((item) => item.enPassRate), itemStyle: { color: "#f59e0b" } },
+      { name: dt("comparison.total"), type: "bar", data: items.map((item) => item.passRate), itemStyle: { color: theme.accent } },
+      { name: dt("comparison.ukrainian"), type: "bar", data: items.map((item) => item.ukPassRate), itemStyle: { color: theme.sage } },
+      { name: dt("comparison.english"), type: "bar", data: items.map((item) => item.enPassRate), itemStyle: { color: theme.taupe } },
     ],
   };
 
@@ -80,7 +93,7 @@ export default function ReportComparison({ items }) {
         value: [item.avgTimeMs / 1000, item.passRate, item.avgRam || 0, item.avgGpu],
       })),
       symbolSize: (value) => Math.max(9, Math.min(34, (value[2] || 512) / 220)),
-      itemStyle: { color: "#2563eb", opacity: 0.78 },
+      itemStyle: { color: theme.accent, opacity: 0.8 },
     }],
     tooltip: {
       ...base.tooltip,
@@ -93,7 +106,7 @@ export default function ReportComparison({ items }) {
     grid: { left: 150, right: 25, top: 15, bottom: 65 },
     xAxis: { type: "category", data: view.chats, axisLabel: { color: theme.muted, rotate: 25 } },
     yAxis: { type: "category", data: view.embeds, axisLabel: { color: theme.muted } },
-    visualMap: { min: 0, max: 100, orient: "horizontal", left: "center", bottom: 0, textStyle: { color: theme.muted }, inRange: { color: ["#b91c1c", "#fbbf24", "#15803d"] } },
+    visualMap: { min: 0, max: 100, orient: "horizontal", left: "center", bottom: 0, textStyle: { color: theme.muted }, inRange: { color: theme.ramp } },
     series: [{ type: "heatmap", data: view.matrix, label: { show: true, formatter: ({ value }) => `${value[2]}%\n(n=${value[3]})`, color: theme.text } }],
     tooltip: {
       ...base.tooltip,

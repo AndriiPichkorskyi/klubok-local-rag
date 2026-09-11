@@ -24,6 +24,7 @@ export const dbStats = () => rpc("db.stats");
 export const catalogApps = (params = {}) => rpc("catalog.apps", params);
 export const catalogGuides = (params = {}) => rpc("catalog.guides", params);
 export const catalogGuide = (id) => rpc("catalog.guide", { id });
+export const catalogAppIcons = (paths) => rpc("catalog.appIcons", { paths });
 export const jobCancel = (id) => rpc("job.cancel", { id });
 export const testsPause = (id) => rpc("tests.pause", { id });
 export const testsResume = (id, concurrency) =>

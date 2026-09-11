@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Check, LoaderCircle, X } from "lucide-react";
+import { Check, X } from "lucide-react";
+import StatusDot from "./StatusDot";
 import klubokImage from "../assets/klubok_transparent.png";
 
 const STAGE_TOPS = [20, 13, 24, 11, 21];
@@ -151,9 +152,10 @@ export default function ProgressPanel({ query, msg, complete, onComplete, onCanc
             data-state={index < current ? "done" : index === current ? "active" : "future"}
             style={{ left: `${STAGE_PROGRESS[index]}%`, top: STAGE_TOPS[index] }}
           >
-            <span className="thread-dot">
-              {index < current ? <Check size={12} strokeWidth={3} /> : null}
-            </span>
+            <StatusDot
+              variant="thread"
+              state={index < current ? "done" : index === current ? "active" : "future"}
+            />
             <span className="thread-label">{stage}</span>
           </div>
         ))}
@@ -165,9 +167,7 @@ export default function ProgressPanel({ query, msg, complete, onComplete, onCanc
           const active = index === current && current < 4;
           return (
             <div className="generation-log-row" key={row}>
-              <span className={done ? "log-icon is-done" : active ? "log-icon is-active" : "log-icon"}>
-                {done ? <Check size={13} strokeWidth={3} /> : active ? <LoaderCircle size={15} /> : null}
-              </span>
+              <StatusDot variant="log" state={done ? "done" : active ? "active" : "future"} />
               <span>{row}</span>
               {done ? <small>{t("common.done")}</small> : active ? <small>{t("common.now")}</small> : null}
             </div>

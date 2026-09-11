@@ -9,8 +9,19 @@ import {
   Search,
   ShieldCheck,
 } from "lucide-react";
-import { catalogApps } from "../ipc";
+import { catalogApps, catalogAppIcons } from "../ipc";
 import { launchApp } from "../walkthrough/tauri";
+
+/**
+ * Іконки програм. Кеш модульний, бо вкладка монтується заново при кожному
+ * перемиканні, а конвертація .icns → PNG на боці sidecar не безкоштовна.
+ */
+const iconCache = new Map();
+const ICON_BATCH = 40;
+
+function appIcon(app) {
+  return iconCache.get(app?.path) || null;
+}
 
 function appKind(path, t) {
   if (String(path || "").startsWith("/System/")) return t("catalog.builtIn");
@@ -44,6 +55,7 @@ export default function InstalledApps({ onOpenGuides }) {
   const [error, setError] = useState("");
   const [launchError, setLaunchError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [iconsVersion, setIconsVersion] = useState(0);
 
   useEffect(() => {
     let current = true;
@@ -71,6 +83,32 @@ export default function InstalledApps({ onOpenGuides }) {
       window.clearTimeout(timer);
     };
   }, [search, reloadKey]);
+
+  // Іконки тягнемо партіями після появи списку: у ньому може бути 200 програм.
+  useEffect(() => {
+    const paths = data.items
+      .map((item) => item.path)
+      .filter((path) => path && !iconCache.has(path));
+    if (paths.length === 0) return undefined;
+
+    let current = true;
+    (async () => {
+      for (let index = 0; index < paths.length; index += ICON_BATCH) {
+        if (!current) return;
+        try {
+          const result = await catalogAppIcons(paths.slice(index, index + ICON_BATCH));
+          const icons = result?.icons || {};
+          Object.entries(icons).forEach(([path, dataUrl]) => iconCache.set(path, dataUrl));
+        } catch {
+          paths.slice(index, index + ICON_BATCH).forEach((path) => iconCache.set(path, null));
+        }
+        if (current) setIconsVersion((value) => value + 1);
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [data.items]);
 
   const selected = useMemo(
     () => data.items.find((item) => item.id === selectedId) || null,
@@ -127,7 +165,7 @@ export default function InstalledApps({ onOpenGuides }) {
 
       {state !== "error" ? (
         <div className="catalog-layout">
-          <section className="catalog-list" aria-label={t("catalog.listLabel")}>
+          <section className="catalog-list" data-icons={iconsVersion} aria-label={t("catalog.listLabel")}>
             {state === "loading" && data.items.length === 0 ? (
               <div className="catalog-loading">{t("catalog.loading")}</div>
             ) : null}
@@ -142,7 +180,9 @@ export default function InstalledApps({ onOpenGuides }) {
                 data-selected={selectedId === app.id ? "true" : "false"}
                 onClick={() => setSelectedId(app.id)}
               >
-                <span className="app-monogram" aria-hidden="true">{initials(app.name)}</span>
+                <span className="app-monogram" aria-hidden="true">
+                  {appIcon(app) ? <img src={appIcon(app)} alt="" /> : initials(app.name)}
+                </span>
                 <span className="catalog-row-copy">
                   <strong>{app.name}</strong>
                   <span>{appKind(app.path, t)}</span>
@@ -160,7 +200,7 @@ export default function InstalledApps({ onOpenGuides }) {
               <>
                 <div className="catalog-detail-head">
                   <span className="app-monogram is-large" aria-hidden="true">
-                    {initials(selected.name)}
+                    {appIcon(selected) ? <img src={appIcon(selected)} alt="" /> : initials(selected.name)}
                   </span>
                   <div>
                     <div className="catalog-title-line">

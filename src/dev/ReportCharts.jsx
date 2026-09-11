@@ -13,18 +13,51 @@ const AXIS_LABELS = {
   temperature: "charts.axes.temperature",
 };
 
+/**
+ * Кольори графіків беремо з дизайн-системи (ui.css), а не хардкодимо: так вони
+ * самі підхоплюють темну тему й будь-яку зміну токенів.
+ */
+function cssVar(name, fallback) {
+  if (typeof window === "undefined" || !document.documentElement) return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+/** Категорійна послідовність: лавандово-синій, sage, taupe, нейтральні. */
+export function seriesColors() {
+  return [
+    cssVar("--accent", "#7d82b8"),
+    "#81968f",
+    "#c7c4b9",
+    "#a7a7ae",
+    cssVar("--muted", "#6e6e73"),
+  ];
+}
+
+/** Шкала «гірше → краще» для теплокарти: приглушена терракота → taupe → sage. */
+function rampColors() {
+  return ["#b4867f", "#c7c4b9", "#81968f"];
+}
+
 function palette() {
-  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  return dark
-    ? { text: "#e8eaed", muted: "#9aa1ac", line: "#2a2e37", panel: "#1d2027" }
-    : { text: "#16181d", muted: "#6b7280", line: "#e5e7eb", panel: "#f7f8fa" };
+  return {
+    text: cssVar("--fg", "#1d1d1f"),
+    muted: cssVar("--muted", "#6e6e73"),
+    line: cssVar("--line", "#e5e5e5"),
+    panel: cssVar("--surface", "#ffffff"),
+    accent: cssVar("--accent", "#7d82b8"),
+    sage: "#81968f",
+    taupe: "#c7c4b9",
+    negative: "#b4867f",
+  };
 }
 
 function baseOption() {
   const colors = palette();
   return {
     animation: false,
-    textStyle: { color: colors.text, fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif" },
+    color: seriesColors(),
+    textStyle: { color: colors.text, fontFamily: cssVar("--font-sans", "-apple-system, BlinkMacSystemFont, sans-serif") },
     tooltip: { trigger: "item", backgroundColor: colors.panel, borderColor: colors.line, textStyle: { color: colors.text } },
     grid: { left: 48, right: 24, top: 24, bottom: 48, containLabel: true },
   };
@@ -90,7 +123,7 @@ export default function ReportCharts({ data }) {
     yAxis: { type: "value", min: 0, max: 100, name: dt("charts.successPct"), axisLabel: { color: colors.muted } },
     series: [{
       type: "bar",
-      data: axisItems.map((item) => ({ value: item.value, itemStyle: { color: "#2563eb" }, total: item.total })),
+      data: axisItems.map((item) => ({ value: item.value, itemStyle: { color: colors.accent }, total: item.total })),
       label: { show: true, position: "top", formatter: ({ value }) => `${Number(value).toFixed(0)}%`, color: colors.text },
     }],
     tooltip: {
@@ -112,7 +145,7 @@ export default function ReportCharts({ data }) {
       left: "center",
       bottom: 0,
       textStyle: { color: colors.muted },
-      inRange: { color: ["#b91c1c", "#fbbf24", "#15803d"] },
+      inRange: { color: rampColors() },
     },
     series: [{
       type: "heatmap",
@@ -135,7 +168,7 @@ export default function ReportCharts({ data }) {
       type: "scatter",
       data: analytics.scatter,
       symbolSize: (value) => Math.max(8, Math.min(28, (value[2] || 512) / 250)),
-      itemStyle: { color: "#2563eb", opacity: 0.75 },
+      itemStyle: { color: colors.accent, opacity: 0.8 },
     }],
     tooltip: {
       ...baseOption().tooltip,
@@ -150,8 +183,8 @@ export default function ReportCharts({ data }) {
     xAxis: { type: "category", data: analytics.languageBySearch.map((item) => item.search), axisLabel: { color: colors.muted } },
     yAxis: { type: "value", min: 0, max: 100, name: dt("charts.successPct"), axisLabel: { color: colors.muted } },
     series: [
-      { name: dt("charts.ukrainian"), type: "bar", data: analytics.languageBySearch.map((item) => item.uk), itemStyle: { color: "#2563eb" } },
-      { name: dt("charts.english"), type: "bar", data: analytics.languageBySearch.map((item) => item.en), itemStyle: { color: "#f59e0b" } },
+      { name: dt("charts.ukrainian"), type: "bar", data: analytics.languageBySearch.map((item) => item.uk), itemStyle: { color: colors.accent } },
+      { name: dt("charts.english"), type: "bar", data: analytics.languageBySearch.map((item) => item.en), itemStyle: { color: colors.sage } },
     ],
   };
 
@@ -165,7 +198,7 @@ export default function ReportCharts({ data }) {
       data: analytics.failures.map((item) => item.query.length > 34 ? `${item.query.slice(0, 34)}…` : item.query),
       axisLabel: { color: colors.muted },
     },
-    series: [{ type: "bar", data: analytics.failures.map((item) => item.failRate), itemStyle: { color: "#b91c1c" } }],
+    series: [{ type: "bar", data: analytics.failures.map((item) => item.failRate), itemStyle: { color: colors.negative } }],
     tooltip: {
       ...baseOption().tooltip,
       formatter: ({ dataIndex, value }) => {

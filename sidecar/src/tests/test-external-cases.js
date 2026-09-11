@@ -33,7 +33,7 @@ export const EXTERNAL_TEST_CASES = [
     language: "en",
   },
   {
-    query: "Set an alarm for seven tomorrow morning",
+    query: "  ",
     expectedApp: ["Clock", "macOS System"],
     type: "valid",
     language: "en",

@@ -63,7 +63,7 @@ function GuidePreview({ docs }) {
   );
 }
 
-function AlternativeCard({ name, docs, selected, onSelect }) {
+function AlternativeCard({ name, docs, selected, onSelect, askedText = "" }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
 
@@ -99,6 +99,14 @@ function AlternativeCard({ name, docs, selected, onSelect }) {
 
       {open ? (
         <div className="result-alt-docs">
+          <div className="result-alt-actions">
+            <WalkthroughLauncher
+              appName={name}
+              docTitle={docs[0]?.title || ""}
+              askedText={askedText}
+              docId={docs[0]?.docId ?? null}
+            />
+          </div>
           {docs.map((doc, index) => (
             <details className="result-alt-doc" key={`${doc.docId || index}-${doc.title}`} open={index === 0}>
               <summary>{doc.title || t("result.guideFallback")}</summary>
@@ -187,6 +195,7 @@ export default function ResultView({ answer, selectedIndex, onSelect, askedText 
                 key={name}
                 name={name}
                 docs={docs}
+                askedText={askedText}
                 selected={selectedIndex === index + 1}
                 onSelect={() => onSelect(index + 1)}
               />

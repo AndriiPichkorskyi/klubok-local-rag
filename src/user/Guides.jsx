@@ -5,6 +5,9 @@ import { catalogGuide, catalogGuides } from "../ipc";
 import WalkthroughLauncher from "../walkthrough/WalkthroughLauncher";
 import Markdown from "./markdown";
 
+/** Скільки довідок тягнемо за один запит. Бекенд обмежує сторінку 200 записами. */
+const PAGE_SIZE = 120;
+
 export default function Guides({ appFilter, onClearFilter }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -15,6 +18,7 @@ export default function Guides({ appFilter, onClearFilter }) {
   const [detailState, setDetailState] = useState("idle");
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -24,7 +28,8 @@ export default function Guides({ appFilter, onClearFilter }) {
       catalogGuides({
         search: search.trim(),
         appId: appFilter?.id || null,
-        limit: 120,
+        limit: PAGE_SIZE,
+        offset: 0,
       })
         .then((result) => {
           if (!current) return;
@@ -46,6 +51,29 @@ export default function Guides({ appFilter, onClearFilter }) {
       window.clearTimeout(timer);
     };
   }, [appFilter?.id, reloadKey, search]);
+
+  const loadMore = () => {
+    if (loadingMore || data.items.length >= data.total) return;
+    setLoadingMore(true);
+    catalogGuides({
+      search: search.trim(),
+      appId: appFilter?.id || null,
+      limit: PAGE_SIZE,
+      offset: data.items.length,
+    })
+      .then((result) => {
+        const items = result && Array.isArray(result.items) ? result.items : [];
+        setData((previous) => {
+          const known = new Set(previous.items.map((item) => item.id));
+          return {
+            items: [...previous.items, ...items.filter((item) => !known.has(item.id))],
+            total: Number.isFinite(result?.total) ? result.total : previous.total,
+          };
+        });
+      })
+      .catch((caught) => setError(String(caught?.message || caught)))
+      .finally(() => setLoadingMore(false));
+  };
 
   useEffect(() => {
     if (!selectedId) {
@@ -141,6 +169,14 @@ export default function Guides({ appFilter, onClearFilter }) {
                 <ChevronRight size={16} aria-hidden="true" />
               </button>
             ))}
+            {state !== "loading" && data.items.length < data.total ? (
+              <div className="catalog-more">
+                <span>{t("guides.shown", { count: data.items.length, total: data.total })}</span>
+                <button type="button" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? t("guides.loading") : t("guides.showMore", { count: Math.min(PAGE_SIZE, data.total - data.items.length) })}
+                </button>
+              </div>
+            ) : null}
           </section>
 
           <article className="catalog-detail guide-detail" aria-live="polite">
